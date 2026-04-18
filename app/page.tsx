@@ -1,26 +1,69 @@
 'use client';
 
 import { useState } from 'react';
-import { Job, JobStage } from '@/types';
-import { mockJobs, mockInterviewSchedules, mockResumeInfo } from '@/lib/mockData';
+import { DragDropContext, DropResult } from '@hello-pangea/dnd';
+import { Job, JobStage, Task } from '@/types';
+import { mockJobs, mockTasks, mockInterviewSchedules, mockResumeInfo } from '@/lib/mockData';
 import KanbanColumn from '@/components/KanbanColumn';
 import BottomShelf from '@/components/BottomShelf';
 import AISidebar from '@/components/AISidebar';
 import AgendaView from '@/components/AgendaView';
-import { Briefcase, TrendingUp, Activity } from 'lucide-react';
+import SideDrawer from '@/components/SideDrawer';
+import { Briefcase, TrendingUp, Activity, Plus } from 'lucide-react';
 
 const stages: JobStage[] = ['待投递', '已投递', '笔试中', '面试中', 'Offer', '已结束'];
 
 export default function Home() {
-  const [currentView, setCurrentView] = useState('kanban');
+  const [currentView, setCurrentView] = useState<'kanban' | 'agenda'>('kanban');
+  const [jobs, setJobs] = useState<Job[]>(mockJobs);
+  const [tasks, setTasks] = useState<Task[]>(mockTasks);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
   const jobsByStage = stages.reduce((acc, stage) => {
-    acc[stage] = mockJobs.filter((job) => job.stage === stage);
+    acc[stage] = jobs.filter((job) => job.stage === stage);
     return acc;
   }, {} as Record<JobStage, Job[]>);
 
-  const totalJobs = mockJobs.length;
+  const totalJobs = jobs.length;
   const successRate = '12.4%';
+
+  function onDragEnd(result: DropResult) {
+    const { source, destination, draggableId } = result;
+    if (!destination) return;
+    if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+    const newStage = destination.droppableId as JobStage;
+    setJobs((prev) =>
+      prev.map((job) => (job.id === draggableId ? { ...job, stage: newStage } : job))
+    );
+  }
+
+  const handleOpenJob = (job: Job) => setSelectedJob(job);
+  const handleCloseDrawer = () => setSelectedJob(null);
+
+  const handleUpdateJob = (updated: Job) => {
+    const exists = jobs.some((j) => j.id === updated.id);
+    if (exists) {
+      setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
+    } else {
+      setJobs((prev) => [updated, ...prev]);
+    }
+  };
+
+  function createEmptyJob(stage: JobStage = '待投递'): Job {
+    return {
+      id: `new-${Date.now()}`,
+      company: '',
+      title: '',
+      stage,
+      deadline: '',
+      tags: {},
+      progress: 10,
+    };
+  }
+
+  const handleAddJob = (stage?: JobStage) => {
+    setSelectedJob(createEmptyJob(stage));
+  };
 
   return (
     <div className="min-h-screen bg-[#D1CFCA] flex items-center justify-center p-4">
@@ -100,20 +143,32 @@ export default function Home() {
             {/* 中间内容容器：占满剩余高度 */}
             <div className="flex-1 flex flex-col overflow-hidden">
               {currentView === 'kanban' ? (
-                <>
-                  {/* 看板区域 */}
-                  <div className="flex gap-0 overflow-x-auto pb-4 flex-1 items-stretch">
-                    {stages.map((stage) => (
-                      <KanbanColumn
-                        key={stage}
-                        title={stage}
-                        jobs={jobsByStage[stage]}
-                      />
-                    ))}
-                  </div>
-                </>
+                <div className="relative flex-1 flex flex-col overflow-hidden">
+                  <DragDropContext onDragEnd={onDragEnd}>
+                    <div className="flex gap-0 overflow-x-auto pb-4 flex-1 items-stretch">
+                      {stages.map((stage) => (
+                        <KanbanColumn
+                          key={stage}
+                          title={stage}
+                          jobs={jobsByStage[stage]}
+                          setJobs={setJobs}
+                          onOpenJob={handleOpenJob}
+                          onAddJob={handleAddJob}
+                        />
+                      ))}
+                    </div>
+                  </DragDropContext>
+                  {/* FAB: 新建岗位，贴在已结束列右下角 */}
+                  <button
+                    onClick={() => handleAddJob()}
+                    className="absolute bottom-3 right-3 z-50 w-9 h-9 rounded-full bg-white/70 backdrop-blur-sm border border-gray-200 shadow-sm hover:bg-white hover:shadow-md hover:scale-105 transition-all duration-300 flex items-center justify-center"
+                    title="新建岗位"
+                  >
+                    <Plus className="w-5 h-5 text-[#8E7E6E]" />
+                  </button>
+                </div>
               ) : (
-                <AgendaView />
+                <AgendaView tasks={tasks} setTasks={setTasks} />
               )}
             </div>
 
@@ -130,6 +185,16 @@ export default function Home() {
           <AISidebar />
         </div>
       </div>
+
+      {/* Side Drawer */}
+      {selectedJob && (
+        <SideDrawer
+          job={selectedJob}
+          onClose={handleCloseDrawer}
+          onUpdate={handleUpdateJob}
+        />
+      )}
+
     </div>
   );
 }

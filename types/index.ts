@@ -1,4 +1,4 @@
-export type JobStage = 
+export type JobStage =
   | '待投递'
   | '已投递'
   | '笔试中'
@@ -12,6 +12,7 @@ export interface Job {
   title: string;
   stage: JobStage;
   deadline: string;
+  time?: string;
   tags: {
     referral?: '有' | '无' | '学长';
     remaining?: string;
@@ -19,6 +20,24 @@ export interface Job {
     interviewTime?: string;
   };
   progress: number;
+  description?: string;
+  notes?: string;
+}
+
+export type TaskType = '面试' | '笔试' | '待投递';
+
+export interface Task {
+  id: string;
+  jobId?: string;
+  date: string; // e.g. '今天' | '明天' | '4月20日'
+  time: string;
+  title: string;
+  company: string;
+  round?: string;
+  tag: TaskType;
+  meetingLink?: string;
+  resumeFilename?: string;
+  isCompleted: boolean;
 }
 
 export interface InterviewSchedule {

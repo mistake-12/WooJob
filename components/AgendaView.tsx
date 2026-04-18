@@ -1,5 +1,118 @@
 'use client';
 
+import { useState } from 'react';
+import { Task } from '@/types';
+
+interface AgendaViewProps {
+  tasks: Task[];
+  setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
+}
+
+interface AgendaSection {
+  date: string;
+  tasks: Task[];
+}
+
+function groupTasksByDate(tasks: Task[]): AgendaSection[] {
+  const order = ['今天', '明天', '4月20日', '4月21日', '4月22日', '4月23日', '4月24日'];
+  const map = new Map<string, Task[]>();
+  for (const t of tasks) {
+    if (!map.has(t.date)) map.set(t.date, []);
+    map.get(t.date)!.push(t);
+  }
+  return order
+    .filter((d) => map.has(d))
+    .map((d) => ({ date: d, tasks: map.get(d)! }));
+}
+
+function CheckIcon() {
+  return (
+    <svg width="8" height="8" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M2 5.5L4 7.5L8 3" stroke="#9CA3AF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+interface TaskCardProps {
+  task: Task;
+  setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
+}
+
+function TaskCard({ task, setTasks }: TaskCardProps) {
+  const [localDone, setLocalDone] = useState(task.isCompleted);
+
+  function toggle() {
+    setLocalDone((v) => !v);
+    setTasks((prev) =>
+      prev.map((t) => (t.id === task.id ? { ...t, isCompleted: !t.isCompleted } : t))
+    );
+  }
+
+  return (
+    <div
+      className={`flex items-center w-full rounded-lg shadow-sm border p-4 transition-all cursor-pointer
+        ${localDone ? 'bg-gray-50 border-gray-100' : 'bg-white border-gray-100 hover:shadow-md hover:border-gray-200'}
+      `}
+    >
+      {/* 左侧：时间标识区（固定宽度） */}
+      <div className="flex items-center gap-3 shrink-0 min-w-[100px]">
+        {/* Checkbox */}
+        <div
+          onClick={toggle}
+          className={`w-5 h-5 rounded-full border-2 transition-colors cursor-pointer flex items-center justify-center flex-shrink-0
+            ${localDone ? 'border-gray-300 bg-gray-200' : 'border-gray-300 hover:border-gray-500'}
+          `}
+        >
+          {localDone && <CheckIcon />}
+        </div>
+        {/* 时间 */}
+        <span className={`text-sm font-medium leading-none whitespace-nowrap ${localDone ? 'text-gray-300' : 'text-gray-400'}`}>
+          {task.time}
+        </span>
+        {/* 分割点 */}
+        <div className="w-1 h-1 rounded-full bg-gray-300 flex-shrink-0" />
+      </div>
+
+      {/* 中间：核心标题区（弹性撑满） */}
+      <div className="flex-1 flex flex-col min-w-0 pr-4">
+        <p className={`text-sm truncate leading-snug ${localDone ? 'line-through text-gray-400' : 'font-semibold text-gray-900'}`}>
+          {task.title}
+        </p>
+        {task.round && (
+          <p className={`text-xs mt-0.5 leading-none ${localDone ? 'text-gray-300' : 'text-gray-400'}`}>
+            {task.round}
+          </p>
+        )}
+      </div>
+
+      {/* 右侧：快捷动作与标签（靠右对齐） */}
+      <div className="flex items-center gap-4 shrink-0">
+        {task.meetingLink && (
+          <button
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer whitespace-nowrap
+              ${localDone ? 'bg-gray-100 text-gray-400' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}
+            `}
+          >
+            <VideoIcon />
+            {task.meetingLink}
+          </button>
+        )}
+        {task.resumeFilename && (
+          <span className={`flex items-center gap-1 text-[10px] leading-none whitespace-nowrap ${localDone ? 'text-gray-300' : 'text-gray-400'}`}>
+            <PaperclipIcon />
+            {task.resumeFilename}
+          </span>
+        )}
+        <span
+          className={`text-xs font-medium px-2.5 py-1 rounded-md ${localDone ? 'bg-gray-100 text-gray-400' : (tagColors[task.tag] ?? '')}`}
+        >
+          {task.tag}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function VideoIcon() {
   return (
     <svg width="10" height="10" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -30,6 +143,27 @@ function getMonthGrid(year: number, month: number) {
   return cells;
 }
 
+/** 将日历数字 day 映射为 tasks 中的 date 字符串 */
+function dayToDateLabel(day: number | null): string | null {
+  if (day === null) return null;
+  if (day === TODAY.getDate()) return '今天';
+  const tomorrow = new Date(TODAY);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (day === tomorrow.getDate()) return '明天';
+  return `${day}月${day}日`.replace(/^(\d+)月(\d+)日$/, (m, mth, dth) => `${mth}月${dth}日`);
+}
+
+/** 将 '今天' / '明天' / '4月20日' 映射为日历数字 */
+function dateLabelToDay(label: string): number | null {
+  if (label === '今天') return TODAY.getDate();
+  if (label === '明天') {
+    const t = new Date(TODAY); t.setDate(t.getDate() + 1); return t.getDate();
+  }
+  const match = label.match(/^(\d+)月(\d+)日$/);
+  if (!match) return null;
+  return parseInt(match[2]);
+}
+
 const LEFT_SIDEBAR_ITEMS = [
   { label: '全部待办', count: 5 },
   { label: '近期面试', count: 2 },
@@ -37,124 +171,42 @@ const LEFT_SIDEBAR_ITEMS = [
   { label: '已投递待回', count: 2 },
 ];
 
-interface AgendaTask {
-  id: string;
-  time: string;
-  company: string;
-  title: string;
-  round?: string;
-  tag: '面试' | '笔试' | '待投递';
-  meetingLink?: string;
-  resumeFilename?: string;
-}
+const DATE_LABELS: Record<string, { sub: string; weekday: string }> = {
+  '今天': { sub: '4月18日', weekday: '星期六' },
+  '明天': { sub: '4月19日', weekday: '星期日' },
+  '4月20日': { sub: '4月20日', weekday: '星期一' },
+  '4月21日': { sub: '4月21日', weekday: '星期二' },
+  '4月22日': { sub: '4月22日', weekday: '星期三' },
+  '4月23日': { sub: '4月23日', weekday: '星期四' },
+  '4月24日': { sub: '4月24日', weekday: '星期五' },
+};
 
-interface AgendaSection {
-  label: string;
-  sub: string;
-  weekday: string;
-  tasks: AgendaTask[];
-}
+const tagColors: Record<string, string> = {
+  '面试': 'bg-[#EBE8E1] text-[#666666]',
+  '笔试': 'bg-[#EBE8E1] text-[#666666]',
+  '待投递': 'bg-[#EBE8E1] text-[#666666]',
+};
 
-const AGENDA_DATA: AgendaSection[] = [
-  {
-    label: '今天',
-    sub: '4月18日',
-    weekday: '星期六',
-    tasks: [
-      {
-        id: 't1',
-        time: '14:00',
-        company: '滴滴出行',
-        title: '滴滴出行 - 资深产品专家 技术二面',
-        round: '技术二面',
-        tag: '面试',
-        meetingLink: '进入会议',
-        resumeFilename: '产品主简历_v4.pdf',
-      },
-      {
-        id: 't2',
-        time: '09:00',
-        company: '美团',
-        title: '美团 - UI设计师 在线笔试',
-        round: '笔试中',
-        tag: '笔试',
-        meetingLink: '开始笔试',
-        resumeFilename: '设计师简历_v2.pdf',
-      },
-    ],
-  },
-  {
-    label: '明天',
-    sub: '4月19日',
-    weekday: '星期日',
-    tasks: [
-      {
-        id: 't3',
-        time: '10:00',
-        company: '腾讯',
-        title: '腾讯 - 产品运营专员 一面',
-        round: '初面',
-        tag: '面试',
-        meetingLink: '进入会议',
-        resumeFilename: '产品主简历_v4.pdf',
-      },
-      {
-        id: 't4',
-        time: '20:00',
-        company: '阿里巴巴',
-        title: '阿里巴巴 - 产品经理 笔试',
-        tag: '笔试',
-        meetingLink: '开始笔试',
-        resumeFilename: '产品主简历_v4.pdf',
-      },
-    ],
-  },
-  {
-    label: '4月20日',
-    sub: '4月20日',
-    weekday: '星期一',
-    tasks: [
-      {
-        id: 't5',
-        time: '09:00',
-        company: '字节跳动',
-        title: '字节跳动 - 高级产品经理 HR沟通',
-        tag: '面试',
-        meetingLink: '进入会议',
-        resumeFilename: '产品主简历_v4.pdf',
-      },
-    ],
-  },
-  {
-    label: '4月21日',
-    sub: '4月21日',
-    weekday: '星期二',
-    tasks: [
-      {
-        id: 't6',
-        time: '10:00',
-        company: '滴滴出行',
-        title: '滴滴出行 - 产品经理 终面',
-        round: '终面',
-        tag: '面试',
-        meetingLink: '进入会议',
-        resumeFilename: '产品主简历_v4.pdf',
-      },
-    ],
-  },
-];
-
-export default function AgendaView() {
+export default function AgendaView({ tasks, setTasks }: AgendaViewProps) {
   const year = TODAY.getFullYear();
   const month = TODAY.getMonth();
   const day = TODAY.getDate();
   const grid = getMonthGrid(year, month);
 
-  const tagColors: Record<AgendaTask['tag'], string> = {
-    '面试': 'bg-[#EBE8E1] text-[#666666]',
-    '笔试': 'bg-[#EBE8E1] text-[#666666]',
-    '待投递': 'bg-[#EBE8E1] text-[#666666]',
-  };
+  // ── Step 1: 筛选状态 ──────────────────────────────────────
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  // ── Step 2: 提取有任务的日期（用于渲染日历小圆点）────────
+  const taskDates = new Set(tasks.map((t) => t.date));
+
+  // ── Step 4: 动态过滤列表 ────────────────────────────────
+  const filteredTasks = selectedDate
+    ? tasks.filter((t) => t.date === selectedDate)
+    : tasks;
+  const sections = groupTasksByDate(filteredTasks);
+
+  // ── Step 3 & 4: 筛选侧边栏按钮 ──────────────────────────
+  const isAllActive = selectedDate === null;
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -177,19 +229,30 @@ export default function AgendaView() {
           {/* 日期格 */}
           <div className="grid grid-cols-7 gap-0">
             {grid.map((d, i) => {
+              const dateLabel = dayToDateLabel(d);
+              const hasTask = dateLabel !== null && taskDates.has(dateLabel);
+              const isSelected = dateLabel !== null && dateLabel === selectedDate;
               const isToday = d === day;
+
               return (
-                <div key={i} className="aspect-square flex items-center justify-center">
+                <div key={i} className="relative aspect-square flex items-center justify-center">
                   {d !== null ? (
-                    <div
+                    <button
+                      onClick={() => setSelectedDate(dateLabel)}
                       className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] transition-colors
-                        ${isToday
+                        ${isSelected
                           ? 'bg-gray-900 text-white font-semibold'
-                          : 'text-gray-700 hover:bg-black/5'
+                          : isToday
+                            ? 'bg-[#EBE8E1] text-gray-900 font-semibold'
+                            : 'text-gray-700 hover:bg-black/5'
                         }`}
                     >
                       {d}
-                    </div>
+                      {/* 有任务的灰色小圆点 */}
+                      {hasTask && !isSelected && (
+                        <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-gray-400 rounded-full" />
+                      )}
+                    </button>
                   ) : null}
                 </div>
               );
@@ -197,30 +260,40 @@ export default function AgendaView() {
           </div>
         </div>
 
-        {/* 分类列表 */}
+        {/* 分类筛选列表 */}
         <div>
           <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">
             筛选
           </p>
           <div className="space-y-0">
-            {LEFT_SIDEBAR_ITEMS.map((item, idx) => (
+            {/* 全部待办 — 受 selectedDate 控制 */}
+            <button
+              onClick={() => setSelectedDate(null)}
+              className={`w-full flex items-center justify-between py-2.5 px-3 rounded-md text-sm transition-colors
+                ${isAllActive
+                  ? 'text-gray-900 font-semibold bg-black/4'
+                  : 'text-gray-500 hover:bg-black/4 hover:text-gray-800'
+                }`}
+            >
+              <div className="flex items-center gap-2">
+                {isAllActive && (
+                  <div className="w-0.5 h-3.5 bg-gray-900 rounded-full" />
+                )}
+                <span>全部待办</span>
+              </div>
+              <span className={`text-xs ${isAllActive ? 'text-gray-500' : 'text-gray-400'}`}>
+                {tasks.length}
+              </span>
+            </button>
+
+            {/* 其他固定分类 */}
+            {LEFT_SIDEBAR_ITEMS.slice(1).map((item) => (
               <button
                 key={item.label}
-                className={`w-full flex items-center justify-between py-2.5 px-3 rounded-md text-sm transition-colors
-                  ${idx === 0
-                    ? 'text-gray-900 font-semibold bg-black/4'
-                    : 'text-gray-500 hover:bg-black/4 hover:text-gray-800'
-                  }`}
+                className="w-full flex items-center justify-between py-2.5 px-3 rounded-md text-sm text-gray-500 hover:bg-black/4 hover:text-gray-800 transition-colors"
               >
-                <div className="flex items-center gap-2">
-                  {idx === 0 && (
-                    <div className="w-0.5 h-3.5 bg-gray-900 rounded-full" />
-                  )}
-                  <span>{item.label}</span>
-                </div>
-                <span className={`text-xs ${idx === 0 ? 'text-gray-500' : 'text-gray-400'}`}>
-                  {item.count}
-                </span>
+                <span>{item.label}</span>
+                <span className="text-xs text-gray-400">{item.count}</span>
               </button>
             ))}
           </div>
@@ -230,76 +303,36 @@ export default function AgendaView() {
       {/* ── 右侧主列表 ───────────────────────────── */}
       <main className="flex-1 min-w-0 overflow-y-auto p-8">
         <div className="w-full">
-          {AGENDA_DATA.map((section) => (
-            <section key={section.label} className="mb-10 last:mb-0">
-              {/* 日期分组头 */}
-              <div className="mb-5">
-                <h2 className="text-2xl font-black text-gray-900 leading-none tracking-tight">
-                  {section.label}
-                  <span className="text-base font-medium text-gray-400 ml-3 tracking-normal">
-                    {section.sub} {section.weekday}
-                  </span>
-                </h2>
-              </div>
-
-              {/* 任务卡片列表 */}
-              <div className="space-y-3">
-                {section.tasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className="flex items-center w-full bg-white rounded-lg shadow-sm border border-gray-100 p-4 hover:shadow-md hover:border-gray-200 transition-all cursor-pointer"
-                  >
-                    {/* ── 左侧：时间标识区（固定宽度） */}
-                    <div className="flex items-center gap-3 shrink-0 min-w-[100px]">
-                      {/* Checkbox */}
-                      <div className="w-5 h-5 rounded-full border-2 border-gray-300 hover:border-gray-500 transition-colors cursor-pointer flex items-center justify-center flex-shrink-0">
-                        <div className="w-1.5 h-1.5 rounded-full bg-transparent" />
-                      </div>
-                      {/* 时间 */}
-                      <span className="text-sm font-medium text-gray-400 leading-none whitespace-nowrap">
-                        {task.time}
+          {sections.length === 0 ? (
+            /* 无任务时的空状态提示 */
+            <div className="flex items-center justify-center h-48 text-sm text-gray-300">
+              {selectedDate ? `${selectedDate}没有待办事项` : '暂无待办事项'}
+            </div>
+          ) : (
+            sections.map((section) => {
+              const label = DATE_LABELS[section.date] ?? { sub: section.date, weekday: '' };
+              return (
+                <section key={section.date} className="mb-10 last:mb-0">
+                  {/* 日期分组头 */}
+                  <div className="mb-5">
+                    <h2 className="text-2xl font-black text-gray-900 leading-none tracking-tight">
+                      {section.date}
+                      <span className="text-base font-medium text-gray-400 ml-3 tracking-normal">
+                        {label.sub} {label.weekday}
                       </span>
-                      {/* 分割点 */}
-                      <div className="w-1 h-1 rounded-full bg-gray-300 flex-shrink-0" />
-                    </div>
-
-                    {/* ── 中间：核心标题区（弹性撑满） */}
-                    <div className="flex-1 flex flex-col min-w-0 pr-4">
-                      <p className="text-sm font-semibold text-gray-900 truncate leading-snug">
-                        {task.title}
-                      </p>
-                      {task.round && (
-                        <p className="text-xs text-gray-400 mt-0.5 leading-none">
-                          {task.round}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* ── 右侧：快捷动作与标签（靠右对齐） */}
-                    <div className="flex items-center gap-4 shrink-0">
-                      {task.meetingLink && (
-                        <button className="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer whitespace-nowrap">
-                          <VideoIcon />
-                          {task.meetingLink}
-                        </button>
-                      )}
-                      {task.resumeFilename && (
-                        <span className="flex items-center gap-1 text-[10px] text-gray-400 leading-none whitespace-nowrap">
-                          <PaperclipIcon />
-                          {task.resumeFilename}
-                        </span>
-                      )}
-                      <span
-                        className={`text-xs font-medium px-2.5 py-1 rounded-md ${tagColors[task.tag]}`}
-                      >
-                        {task.tag}
-                      </span>
-                    </div>
+                    </h2>
                   </div>
-                ))}
-              </div>
-            </section>
-          ))}
+
+                  {/* 任务卡片列表 */}
+                  <div className="space-y-3">
+                    {section.tasks.map((task) => (
+                      <TaskCard key={task.id} task={task} setTasks={setTasks} />
+                    ))}
+                  </div>
+                </section>
+              );
+            })
+          )}
         </div>
       </main>
     </div>
