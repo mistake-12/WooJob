@@ -9,7 +9,8 @@ import BottomShelf from '@/components/BottomShelf';
 import AISidebar from '@/components/AISidebar';
 import AgendaView from '@/components/AgendaView';
 import SideDrawer from '@/components/SideDrawer';
-import { Briefcase, TrendingUp, Activity, Plus } from 'lucide-react';
+import { Briefcase, TrendingUp, Activity, Plus, Trash2 } from 'lucide-react';
+import TrashDrawer from '@/components/TrashDrawer';
 
 const stages: JobStage[] = ['待投递', '已投递', '笔试中', '面试中', 'Offer', '已结束'];
 
@@ -18,6 +19,8 @@ export default function Home() {
   const [jobs, setJobs] = useState<Job[]>(mockJobs);
   const [tasks, setTasks] = useState<Task[]>(mockTasks);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [trashedJobs, setTrashedJobs] = useState<Job[]>([]);
+  const [isTrashOpen, setIsTrashOpen] = useState(false);
 
   const jobsByStage = stages.reduce((acc, stage) => {
     acc[stage] = jobs.filter((job) => job.stage === stage);
@@ -65,6 +68,16 @@ export default function Home() {
     setSelectedJob(createEmptyJob(stage));
   };
 
+  const handleTrashJob = (job: Job) => {
+    setJobs((prev) => prev.filter((j) => j.id !== job.id));
+    setTrashedJobs((prev) => [job, ...prev]);
+  };
+
+  const handleRestoreJob = (job: Job) => {
+    setTrashedJobs((prev) => prev.filter((j) => j.id !== job.id));
+    setJobs((prev) => [...prev, { ...job, stage: '已结束' }]);
+  };
+
   return (
     <div className="min-h-screen bg-[#D1CFCA] flex items-center justify-center p-4">
       {/* 应用主窗口 */}
@@ -110,6 +123,19 @@ export default function Home() {
 
             {/* 右侧：统计指标 */}
             <div className="flex items-end gap-8">
+              <button
+                onClick={() => setIsTrashOpen(true)}
+                className="cursor-pointer border border-transparent hover:border-gray-200 hover:bg-gray-50 hover:shadow-sm transition-all duration-200 rounded-lg p-2 -m-2"
+              >
+                <div className="flex items-center gap-3">
+                  <Trash2 className="w-5 h-5 text-[#8B735B]" />
+                  <div className="flex flex-col items-start">
+                    <p className="text-xs font-medium text-[#8B735B] leading-none">回收站</p>
+                    <p className="text-2xl font-bold text-gray-900 leading-none tracking-tight">{trashedJobs.length}</p>
+                  </div>
+                </div>
+              </button>
+
               <div className="flex items-center gap-3">
                 <Briefcase className="w-5 h-5 text-[#8B735B]" />
                 <div className="flex flex-col items-start">
@@ -154,6 +180,7 @@ export default function Home() {
                           setJobs={setJobs}
                           onOpenJob={handleOpenJob}
                           onAddJob={handleAddJob}
+                          onTrashJob={handleTrashJob}
                         />
                       ))}
                     </div>
@@ -195,6 +222,13 @@ export default function Home() {
         />
       )}
 
+      {/* Trash Drawer */}
+      <TrashDrawer
+        trashedJobs={trashedJobs}
+        onRestore={handleRestoreJob}
+        isOpen={isTrashOpen}
+        onClose={() => setIsTrashOpen(false)}
+      />
     </div>
   );
 }

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "求职管理系统",
+  title: "WooJob",
   description: "极简求职看板，管理投递进度",
 };
 

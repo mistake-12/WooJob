@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import {
   X, Pencil, Check, ChevronDown,
-  Calendar, Clock, User, Tag
+  Calendar, Clock, User, Tag, Link
 } from 'lucide-react';
 import { Job, JobStage } from '@/types';
 
@@ -44,6 +44,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
     referral: job.tags.referral ?? ('' as '' | typeof REFERRAL_OPTIONS[number]),
     round: job.tags.round ?? '',
     interviewTime: job.tags.interviewTime ?? '',
+    website: job.website ?? '',
     description: job.description ?? '',
     notes: job.notes ?? '',
   });
@@ -62,7 +63,8 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
       stage: job.stage,
       referral: job.tags.referral ?? ('' as '' | typeof REFERRAL_OPTIONS[number]),
       round: job.tags.round ?? '',
-      interviewTime: job.tags.interviewTime ?? '',
+        interviewTime: job.tags.interviewTime ?? '',
+      website: job.website ?? '',
       description: job.description ?? '',
       notes: job.notes ?? '',
     });
@@ -88,6 +90,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
         round: draft.round || undefined,
         interviewTime: draft.interviewTime || undefined,
       },
+      website: draft.website || undefined,
       description: draft.description || undefined,
       notes: draft.notes || undefined,
     });
@@ -104,6 +107,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
       referral: job.tags.referral ?? ('' as '' | typeof REFERRAL_OPTIONS[number]),
       round: job.tags.round ?? '',
       interviewTime: job.tags.interviewTime ?? '',
+      website: job.website ?? '',
       description: job.description ?? '',
       notes: job.notes ?? '',
     });
@@ -146,7 +150,11 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
             <div className="relative">
               <select
                 value={draft.stage}
-                onChange={(e) => setDraft((p) => ({ ...p, stage: e.target.value as JobStage }))}
+                onChange={(e) => setDraft((p) => ({
+                  ...p,
+                  stage: e.target.value as JobStage,
+                  round: e.target.value === '面试中' ? p.round : '',
+                }))}
                 className="w-full appearance-none text-sm text-gray-800 bg-white border border-gray-200 shadow-sm rounded-md
                   focus:outline-none focus:border-gray-400 focus:ring-0 px-3 py-2 pr-8 transition-colors cursor-pointer"
               >
@@ -161,7 +169,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#8B735B] flex-shrink-0" />
               {draft.stage}
               {draft.stage === '面试中' && draft.round && (
-                <span className="text-gray-400">→</span>
+                <span className="text-[#999999]">→</span>
               )}
               {draft.stage === '面试中' && draft.round && (
                 <span className="text-[#8B735B]">{draft.round}</span>
@@ -204,7 +212,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
           ) : (
             <p className="text-sm text-gray-700 flex items-center gap-2">
               <Clock className="w-3.5 h-3.5 text-[#8B735B] flex-shrink-0" />
-              {draft.time || <span className="text-gray-300 italic">未设置</span>}
+              {draft.time || <span className="text-[#999999] italic">未设置</span>}
             </p>
           )}
         </div>
@@ -231,38 +239,76 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
           ) : (
             <p className="text-sm text-gray-700 flex items-center gap-2">
               <User className="w-3.5 h-3.5 text-[#8B735B] flex-shrink-0" />
-              {draft.referral || <span className="text-gray-300 italic">未填写</span>}
+              {draft.referral || <span className="text-[#999999] italic">未填写</span>}
             </p>
           )}
         </div>
 
-        {/* 当前轮次 — 仅"面试中"阶段可见 */}
-        {(isEditing || draft.stage === '面试中') && (
-          <div>
-            <FieldLabel>当前轮次</FieldLabel>
-            {isEditing ? (
-              <div className="relative">
-                <select
-                  value={draft.round}
-                  onChange={(e) => setDraft((p) => ({ ...p, round: e.target.value }))}
-                  className="w-full appearance-none text-sm text-gray-800 bg-white border border-gray-200 shadow-sm rounded-md
-                    focus:outline-none focus:border-gray-400 focus:ring-0 px-3 py-2 pr-8 transition-colors cursor-pointer"
+        {/* 官网地址 */}
+        <div>
+          <FieldLabel>官网地址</FieldLabel>
+          {isEditing ? (
+            <input
+              type="url"
+              value={draft.website}
+              onChange={(e) => setDraft((p) => ({ ...p, website: e.target.value }))}
+              placeholder="输入官网或JD链接..."
+              className="w-full text-sm text-gray-800 bg-white border border-gray-200 shadow-sm rounded-md
+                focus:outline-none focus:border-gray-400 focus:ring-0 px-3 py-2 transition-colors"
+            />
+          ) : (
+            <p className="text-sm text-gray-700 flex items-center gap-2">
+              <Link className="w-4 h-4 text-[#8E7E6E] flex-shrink-0" />
+              {draft.website ? (
+                <a
+                  href={draft.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[#8B735B] underline underline-offset-2 decoration-1 hover:opacity-70 transition-opacity"
                 >
-                  <option value="">— 选择轮次 —</option>
-                  {INTERVIEW_ROUNDS.map((r) => (
-                    <option key={r} value={r}>{r}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                  {draft.website}
+                </a>
+              ) : (
+                <span className="text-[#999999] italic">未填写</span>
+              )}
+            </p>
+          )}
+        </div>
+
+        {/* 当前轮次 — 仅"面试中"阶段可见，始终占据内推情况右侧那一格 */}
+        <div>
+          {isEditing ? (
+            draft.stage === '面试中' ? (
+              <div>
+                <FieldLabel>当前轮次</FieldLabel>
+                <div className="relative">
+                  <select
+                    value={draft.round}
+                    onChange={(e) => setDraft((p) => ({ ...p, round: e.target.value }))}
+                    className="w-full appearance-none text-sm text-gray-800 bg-white border border-gray-200 shadow-sm rounded-md
+                      focus:outline-none focus:border-gray-400 focus:ring-0 px-3 py-2 pr-8 transition-colors cursor-pointer"
+                  >
+                    <option value="">— 选择轮次 —</option>
+                    {INTERVIEW_ROUNDS.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                </div>
               </div>
-            ) : (
-              <p className="text-sm text-gray-700 flex items-center gap-2">
-                <Tag className="w-3.5 h-3.5 text-[#8B735B] flex-shrink-0" />
-                {draft.round || <span className="text-gray-300 italic">未填写</span>}
-              </p>
-            )}
-          </div>
-        )}
+            ) : null
+          ) : (
+            draft.stage === '面试中' && (
+              <div>
+                <FieldLabel>当前轮次</FieldLabel>
+                <p className="text-sm text-gray-700 flex items-center gap-2">
+                  <Tag className="w-3.5 h-3.5 text-[#8B735B] flex-shrink-0" />
+                  {draft.round || <span className="text-[#999999] italic">未填写</span>}
+                </p>
+              </div>
+            )
+          )}
+        </div>
 
         {/* 岗位描述 — 跨越两列 */}
         <div className="col-span-2">
@@ -275,12 +321,12 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
               rows={8}
               className="w-full resize-none text-sm text-gray-800 bg-white border border-gray-200 shadow-sm rounded-md
                 focus:outline-none focus:border-gray-400 focus:ring-0 px-3 py-2.5 leading-relaxed
-                placeholder:text-gray-300 transition-colors"
+                placeholder:text-[#999999] transition-colors"
             />
           ) : (
             <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
               {draft.description || (
-                <span className="text-gray-300 italic">暂无岗位描述</span>
+                <span className="text-[#999999] italic">暂无岗位描述</span>
               )}
             </p>
           )}
@@ -299,11 +345,11 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
       </div>
       <div>
         <FieldLabel>附件材料</FieldLabel>
-        <p className="text-sm text-gray-400 italic">暂无附件</p>
+        <p className="text-sm text-[#999999] italic">暂无附件</p>
       </div>
       <div>
         <FieldLabel>关联日程</FieldLabel>
-        <p className="text-sm text-gray-400 italic">暂无关联日程</p>
+        <p className="text-sm text-[#999999] italic">暂无关联日程</p>
       </div>
     </div>
   );
@@ -319,7 +365,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
         placeholder="记录面试复盘、问题总结、改进计划..."
         rows={16}
         className="w-full resize-none text-sm text-gray-700 bg-transparent border-b border-[#D8D4CE]
-          focus:outline-none focus:border-[#8B735B] py-2 leading-relaxed placeholder:text-gray-300 transition-colors"
+          focus:outline-none focus:border-[#8B735B] py-2 leading-relaxed placeholder:text-[#999999] transition-colors"
       />
     </div>
   );

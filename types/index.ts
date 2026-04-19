@@ -22,6 +22,7 @@ export interface Job {
   progress: number;
   description?: string;
   notes?: string;
+  website?: string;
 }
 
 export type TaskType = '面试' | '笔试' | '待投递';

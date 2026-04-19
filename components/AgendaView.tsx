@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Task } from '@/types';
+import TaskDetails from './TaskDetails';
 
 interface AgendaViewProps {
   tasks: Task[];
@@ -36,9 +37,10 @@ function CheckIcon() {
 interface TaskCardProps {
   task: Task;
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
+  onOpen: (task: Task) => void;
 }
 
-function TaskCard({ task, setTasks }: TaskCardProps) {
+function TaskCard({ task, setTasks, onOpen }: TaskCardProps) {
   const [localDone, setLocalDone] = useState(task.isCompleted);
 
   function toggle() {
@@ -50,6 +52,7 @@ function TaskCard({ task, setTasks }: TaskCardProps) {
 
   return (
     <div
+      onClick={() => onOpen(task)}
       className={`flex items-center w-full rounded-lg shadow-sm border p-4 transition-all cursor-pointer
         ${localDone ? 'bg-gray-50 border-gray-100' : 'bg-white border-gray-100 hover:shadow-md hover:border-gray-200'}
       `}
@@ -58,7 +61,11 @@ function TaskCard({ task, setTasks }: TaskCardProps) {
       <div className="flex items-center gap-3 shrink-0 min-w-[100px]">
         {/* Checkbox */}
         <div
-          onClick={toggle}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            toggle();
+          }}
           className={`w-5 h-5 rounded-full border-2 transition-colors cursor-pointer flex items-center justify-center flex-shrink-0
             ${localDone ? 'border-gray-300 bg-gray-200' : 'border-gray-300 hover:border-gray-500'}
           `}
@@ -188,13 +195,13 @@ const tagColors: Record<string, string> = {
 };
 
 export default function AgendaView({ tasks, setTasks }: AgendaViewProps) {
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
   const year = TODAY.getFullYear();
   const month = TODAY.getMonth();
   const day = TODAY.getDate();
   const grid = getMonthGrid(year, month);
-
-  // ── Step 1: 筛选状态 ──────────────────────────────────────
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   // ── Step 2: 提取有任务的日期（用于渲染日历小圆点）────────
   const taskDates = new Set(tasks.map((t) => t.date));
@@ -209,6 +216,7 @@ export default function AgendaView({ tasks, setTasks }: AgendaViewProps) {
   const isAllActive = selectedDate === null;
 
   return (
+    <>
     <div className="flex h-full overflow-hidden">
       {/* ── 左侧边栏 ─────────────────────────────── */}
       <aside className="w-[300px] flex-shrink-0 border-r border-[#DCD9D1] flex flex-col overflow-y-auto py-6 px-5 gap-8">
@@ -326,7 +334,7 @@ export default function AgendaView({ tasks, setTasks }: AgendaViewProps) {
                   {/* 任务卡片列表 */}
                   <div className="space-y-3">
                     {section.tasks.map((task) => (
-                      <TaskCard key={task.id} task={task} setTasks={setTasks} />
+                      <TaskCard key={task.id} task={task} setTasks={setTasks} onOpen={setSelectedTask} />
                     ))}
                   </div>
                 </section>
@@ -336,5 +344,18 @@ export default function AgendaView({ tasks, setTasks }: AgendaViewProps) {
         </div>
       </main>
     </div>
+
+    {/* Task Details Drawer */}
+    {selectedTask && (
+      <TaskDetails
+        task={selectedTask}
+        onClose={() => setSelectedTask(null)}
+        onUpdateTask={(updated) => {
+          setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+          setSelectedTask(updated);
+        }}
+      />
+    )}
+    </>
   );
 }

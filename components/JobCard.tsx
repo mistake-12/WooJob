@@ -2,16 +2,17 @@
 
 import { Draggable } from '@hello-pangea/dnd';
 import { Job } from '@/types';
-import { GripVertical, Calendar } from 'lucide-react';
+import { GripVertical, Calendar, Trash2 } from 'lucide-react';
 
 interface JobCardProps {
   job: Job;
   index: number;
   setJobs: React.Dispatch<React.SetStateAction<Job[]>>;
   onOpen: (job: Job) => void;
+  onTrash?: (job: Job) => void;
 }
 
-export default function JobCard({ job, index, setJobs, onOpen }: JobCardProps) {
+export default function JobCard({ job, index, setJobs, onOpen, onTrash }: JobCardProps) {
   const isEnded = job.stage === '已结束';
 
   /* 计算进度百分比：基础阶段 + 面试中轮次细分 */
@@ -94,9 +95,27 @@ export default function JobCard({ job, index, setJobs, onOpen }: JobCardProps) {
               <h3 className="text-sm font-bold text-[#111111] leading-tight flex-1">
                 {job.title}
               </h3>
-              <div className="opacity-20 group-hover:opacity-40 transition-opacity ml-2 flex-shrink-0">
-                <GripVertical className="w-3 h-3 text-[#999999]" />
-              </div>
+              {isEnded && onTrash ? (
+                <button
+                  onPointerDownCapture={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onTrash(job);
+                  }}
+                  className="p-1 rounded-md hover:bg-[#8B735B]/10 transition-colors flex-shrink-0"
+                  title="删除"
+                >
+                  <Trash2 className="w-4 h-4 text-[#8B735B] group-hover:text-[#7A654D] transition-colors" />
+                </button>
+              ) : (
+                <div className="opacity-20 group-hover:opacity-40 transition-opacity ml-2 flex-shrink-0">
+                  <GripVertical className="w-3 h-3 text-[#999999]" />
+                </div>
+              )}
             </div>
 
             {/* 公司名称 */}

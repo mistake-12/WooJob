@@ -11,11 +11,12 @@ interface KanbanColumnProps {
   setJobs: React.Dispatch<React.SetStateAction<Job[]>>;
   onOpenJob: (job: Job) => void;
   onAddJob: (stage: JobStage) => void;
+  onTrashJob?: (job: Job) => void;
 }
 
 const LAST_STAGE: JobStage = '已结束';
 
-export default function KanbanColumn({ title, jobs, setJobs, onOpenJob, onAddJob }: KanbanColumnProps) {
+export default function KanbanColumn({ title, jobs, setJobs, onOpenJob, onAddJob, onTrashJob }: KanbanColumnProps) {
   const count = String(jobs.length).padStart(2, '0');
   const isLast = title === LAST_STAGE;
 
@@ -58,6 +59,7 @@ export default function KanbanColumn({ title, jobs, setJobs, onOpenJob, onAddJob
                   index={index}
                   setJobs={setJobs}
                   onOpen={onOpenJob}
+                  onTrash={onTrashJob}
                 />
               ))
             )}
