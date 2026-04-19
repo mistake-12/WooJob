@@ -4,6 +4,20 @@
 **产品定位:** 专为高校毕业生与年轻白领打造的「All-in-One AI 求职全生命周期管理平台」
 **核心理念:** 极简社论风 (Editorial Design) / 状态驱动视图 / AI 智能提效
 
+##、待办清单
+
+- [√] 前端开发，基础功能实现
+下一步计划
+- [ ] 搭建ai工作流
+- [ ] 初始化 Supabase 项目，运行 SQL 脚本建表
+- [ ] 配置 Supabase Auth（邮箱登录 + OAuth）
+- [ ] 创建 `lib/supabase.ts` 客户端
+- [ ] 创建 `app/actions/` 目录及 Server Actions
+- [ ] 创建 Zustand Store 替换 useState
+- [ ] 前端对接 Server Actions，完成联调
+- [ ] 配置 Vercel 环境变量
+- [ ] 上线部署
+
 ---
 
 ## 一、 产品愿景与痛点分析
