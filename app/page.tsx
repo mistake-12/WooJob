@@ -9,7 +9,7 @@ import BottomShelf from '@/components/BottomShelf';
 import AISidebar from '@/components/AISidebar';
 import AgendaView from '@/components/AgendaView';
 import SideDrawer from '@/components/SideDrawer';
-import { Briefcase, TrendingUp, Activity, Plus, Trash2, Github } from 'lucide-react';
+import { Briefcase, Activity, Plus, Trash2, Github } from 'lucide-react';
 import TrashDrawer from '@/components/TrashDrawer';
 
 const stages: JobStage[] = ['待投递', '已投递', '笔试中', '面试中', 'Offer', '已结束'];
@@ -28,7 +28,6 @@ export default function Home() {
   }, {} as Record<JobStage, Job[]>);
 
   const totalJobs = jobs.length;
-  const successRate = '12.4%';
 
   function onDragEnd(result: DropResult) {
     const { source, destination, draggableId } = result;
@@ -141,14 +140,6 @@ export default function Home() {
                 <div className="flex flex-col items-start">
                   <p className="text-xs font-medium text-[#8B735B] leading-none">在投岗位</p>
                   <p className="text-2xl font-bold text-gray-900 leading-none tracking-tight">{totalJobs}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <TrendingUp className="w-5 h-5 text-[#8B735B]" />
-                <div className="flex flex-col items-start">
-                  <p className="text-xs font-medium text-[#8B735B] leading-none">成功率</p>
-                  <p className="text-2xl font-bold text-gray-900 leading-none tracking-tight">{successRate}</p>
                 </div>
               </div>
 
