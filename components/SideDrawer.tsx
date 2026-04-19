@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   X, Pencil, Check, ChevronDown,
-  Calendar, Clock, User, Tag, Link
+  Calendar, Clock, User, Tag, Link, Loader2
 } from 'lucide-react';
 import { Job, JobStage } from '@/types';
 
@@ -33,6 +33,8 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
   const [activeTab, setActiveTab] = useState<Tab>('details');
   const [isEditing, setIsEditing] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
   /* 编辑状态的本地副本 */
   const [draft, setDraft] = useState({
@@ -69,14 +71,13 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
       notes: job.notes ?? '',
     });
     setIsEditing(!job.company); // 空岗位自动进入编辑模式
+    setIsDirty(false);
+    setSaveStatus('idle');
   }, [job.id]);
 
-  const handleClose = () => {
-    setIsVisible(false);
-    setTimeout(onClose, 300);
-  };
-
-  const handleSave = () => {
+  const saveChanges = useCallback(async () => {
+    if (!isDirty) return;
+    setSaveStatus('saving');
     onUpdate({
       ...job,
       company: draft.company,
@@ -94,7 +95,20 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
       description: draft.description || undefined,
       notes: draft.notes || undefined,
     });
+    setIsDirty(false);
+    setSaveStatus('saved');
     setIsEditing(false);
+    setTimeout(() => setSaveStatus('idle'), 2000);
+  }, [isDirty, draft, job, onUpdate]);
+
+  const handleClose = async () => {
+    if (isDirty) await saveChanges();
+    setIsVisible(false);
+    setTimeout(onClose, 300);
+  };
+
+  const handleSave = () => {
+    saveChanges();
   };
 
   const handleCancel = () => {
@@ -112,10 +126,13 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
       notes: job.notes ?? '',
     });
     setIsEditing(false);
+    setIsDirty(false);
+    setSaveStatus('idle');
   };
 
   const handleNotesChange = (v: string) => {
     setDraft((p) => ({ ...p, notes: v }));
+    setIsDirty(true);
   };
 
   const handleNotesBlur = () => {
@@ -150,11 +167,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
             <div className="relative">
               <select
                 value={draft.stage}
-                onChange={(e) => setDraft((p) => ({
-                  ...p,
-                  stage: e.target.value as JobStage,
-                  round: e.target.value === '面试中' ? p.round : '',
-                }))}
+                onChange={(e) => { setDraft((p) => ({ ...p, stage: e.target.value as JobStage, round: e.target.value === '面试中' ? p.round : '' })); setIsDirty(true); }}
                 className="w-full appearance-none text-sm text-gray-800 bg-white border border-gray-200 shadow-sm rounded-md
                   focus:outline-none focus:border-gray-400 focus:ring-0 px-3 py-2 pr-8 transition-colors cursor-pointer"
               >
@@ -185,7 +198,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
             <input
               type="date"
               value={draft.deadline}
-              onChange={(e) => setDraft((p) => ({ ...p, deadline: e.target.value }))}
+              onChange={(e) => { setDraft((p) => ({ ...p, deadline: e.target.value })); setIsDirty(true); }}
               className="w-full text-sm text-gray-800 bg-white border border-gray-200 shadow-sm rounded-md
                 focus:outline-none focus:border-gray-400 focus:ring-0 px-3 py-2 transition-colors"
             />
@@ -204,7 +217,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
             <input
               type="text"
               value={draft.time}
-              onChange={(e) => setDraft((p) => ({ ...p, time: e.target.value }))}
+              onChange={(e) => { setDraft((p) => ({ ...p, time: e.target.value })); setIsDirty(true); }}
               placeholder="例如：明天 14:00"
               className="w-full text-sm text-gray-800 bg-white border border-gray-200 shadow-sm rounded-md
                 focus:outline-none focus:border-gray-400 focus:ring-0 px-3 py-2 transition-colors"
@@ -225,7 +238,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
               {REFERRAL_OPTIONS.map((r) => (
                 <button
                   key={r}
-                  onClick={() => setDraft((p) => ({ ...p, referral: p.referral === r ? ('' as '') : r }))}
+                  onClick={() => { setDraft((p) => ({ ...p, referral: p.referral === r ? ('' as '') : r })); setIsDirty(true); }}
                   className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border shadow-sm
                     ${draft.referral === r
                       ? 'bg-gray-900 text-white border-gray-900'
@@ -251,7 +264,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
             <input
               type="url"
               value={draft.website}
-              onChange={(e) => setDraft((p) => ({ ...p, website: e.target.value }))}
+              onChange={(e) => { setDraft((p) => ({ ...p, website: e.target.value })); setIsDirty(true); }}
               placeholder="输入官网或JD链接..."
               className="w-full text-sm text-gray-800 bg-white border border-gray-200 shadow-sm rounded-md
                 focus:outline-none focus:border-gray-400 focus:ring-0 px-3 py-2 transition-colors"
@@ -284,7 +297,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
                 <div className="relative">
                   <select
                     value={draft.round}
-                    onChange={(e) => setDraft((p) => ({ ...p, round: e.target.value }))}
+                    onChange={(e) => { setDraft((p) => ({ ...p, round: e.target.value })); setIsDirty(true); }}
                     className="w-full appearance-none text-sm text-gray-800 bg-white border border-gray-200 shadow-sm rounded-md
                       focus:outline-none focus:border-gray-400 focus:ring-0 px-3 py-2 pr-8 transition-colors cursor-pointer"
                   >
@@ -316,7 +329,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
           {isEditing ? (
             <textarea
               value={draft.description}
-              onChange={(e) => setDraft((p) => ({ ...p, description: e.target.value }))}
+              onChange={(e) => { setDraft((p) => ({ ...p, description: e.target.value })); setIsDirty(true); }}
               placeholder="粘贴或填写岗位职责、任职要求..."
               rows={8}
               className="w-full resize-none text-sm text-gray-800 bg-white border border-gray-200 shadow-sm rounded-md
@@ -398,7 +411,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
                     <input
                       type="text"
                       value={draft.company}
-                      onChange={(e) => setDraft((p) => ({ ...p, company: e.target.value }))}
+                      onChange={(e) => { setDraft((p) => ({ ...p, company: e.target.value })); setIsDirty(true); }}
                       className="w-full text-3xl font-black text-gray-900 leading-tight tracking-tight bg-transparent
                         focus:outline-none"
                       placeholder="公司名称"
@@ -408,7 +421,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
                     <input
                       type="text"
                       value={draft.title}
-                      onChange={(e) => setDraft((p) => ({ ...p, title: e.target.value }))}
+                      onChange={(e) => { setDraft((p) => ({ ...p, title: e.target.value })); setIsDirty(true); }}
                       className="w-full text-base font-medium text-[#8B735B] bg-transparent
                         focus:outline-none"
                       placeholder="岗位名称"
@@ -424,6 +437,22 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
                     {draft.title}
                   </p>
                 </>
+              )}
+            </div>
+
+            {/* Save status indicator */}
+            <div className="flex items-center gap-2 flex-shrink-0 min-w-[100px] justify-end">
+              {saveStatus === 'saving' && (
+                <span className="flex items-center gap-1 text-xs text-gray-400 font-medium">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  保存中
+                </span>
+              )}
+              {saveStatus === 'saved' && (
+                <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                  <Check className="w-3 h-3" />
+                  已保存
+                </span>
               )}
             </div>
 

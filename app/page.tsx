@@ -9,7 +9,7 @@ import BottomShelf from '@/components/BottomShelf';
 import AISidebar from '@/components/AISidebar';
 import AgendaView from '@/components/AgendaView';
 import SideDrawer from '@/components/SideDrawer';
-import { Briefcase, TrendingUp, Activity, Plus, Trash2 } from 'lucide-react';
+import { Briefcase, TrendingUp, Activity, Plus, Trash2, Github } from 'lucide-react';
 import TrashDrawer from '@/components/TrashDrawer';
 
 const stages: JobStage[] = ['待投递', '已投递', '笔试中', '面试中', 'Offer', '已结束'];
@@ -90,7 +90,7 @@ export default function Home() {
               <h1 className="text-6xl font-black text-gray-900 tracking-tighter italic leading-none">
                 WooJob!!!
               </h1>
-              <p className="text-[14px] text-[#8B735B] uppercase tracking-[0.3em] leading-none ml-2 mb-1">
+              <p className="text-[14px] italic text-[#8B735B] uppercase tracking-[0.3em] leading-none ml-2 mb-1">
                 求职管理系统
               </p>
             </div>
@@ -159,6 +159,19 @@ export default function Home() {
                   <p className="text-2xl font-bold text-gray-900 leading-none tracking-tight">求职中</p>
                 </div>
               </div>
+
+              <a
+                href="https://github.com/mistake-12/WooJob"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 cursor-pointer border border-transparent hover:border-gray-200 hover:bg-gray-50 hover:shadow-sm transition-all duration-200 rounded-lg p-2 -m-2"
+              >
+                <Github className="w-5 h-5 text-[#8B735B]" />
+                <div className="flex flex-col items-start">
+                  <p className="text-xs font-medium text-[#8B735B] leading-none">GitHub</p>
+                  <p className="text-2xl font-bold text-gray-900 leading-none tracking-tight">项目地址</p>
+                </div>
+              </a>
             </div>
           </div>
         </div>

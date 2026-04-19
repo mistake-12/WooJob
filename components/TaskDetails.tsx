@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { X, Pencil, Check, ExternalLink, Loader2 } from 'lucide-react';
 import { Task, TaskType } from '@/types';
 
-const TASK_TYPE_OPTIONS: TaskType[] = ['面试', '笔试', '待投递'];
+const TASK_TYPE_OPTIONS: TaskType[] = ['面试', '笔试', '待投递', '待办事项'];
 
 interface TaskDetailsProps {
   task: Task;
@@ -36,7 +36,7 @@ export default function TaskDetails({ task, onClose, onUpdateTask }: TaskDetails
     meetingLink: task.meetingLink ?? '',
     resumeFilename: task.resumeFilename ?? '',
     isCompleted: task.isCompleted,
-    notes: '',
+    notes: task.notes ?? '',
   });
 
   useEffect(() => {
@@ -54,7 +54,7 @@ export default function TaskDetails({ task, onClose, onUpdateTask }: TaskDetails
       meetingLink: task.meetingLink ?? '',
       resumeFilename: task.resumeFilename ?? '',
       isCompleted: task.isCompleted,
-      notes: '',
+      notes: task.notes ?? '',
     });
     setIsEditing(!task.title);
     setIsDirty(false);
@@ -74,6 +74,7 @@ export default function TaskDetails({ task, onClose, onUpdateTask }: TaskDetails
       round: draft.round || undefined,
       meetingLink: draft.meetingLink || undefined,
       resumeFilename: draft.resumeFilename || undefined,
+      notes: draft.notes || undefined,
     });
     setIsDirty(false);
     setSaveStatus('saved');
@@ -102,7 +103,7 @@ export default function TaskDetails({ task, onClose, onUpdateTask }: TaskDetails
       meetingLink: task.meetingLink ?? '',
       resumeFilename: task.resumeFilename ?? '',
       isCompleted: task.isCompleted,
-      notes: '',
+      notes: task.notes ?? '',
     });
     setIsEditing(false);
     setIsDirty(false);
@@ -151,9 +152,6 @@ export default function TaskDetails({ task, onClose, onUpdateTask }: TaskDetails
 
             {/* Save status indicator */}
             <div className="flex items-center gap-2 flex-shrink-0 min-w-[100px] justify-end">
-              {isDirty && saveStatus === 'idle' && (
-                <span className="text-xs text-orange-500 font-medium">未保存的更改</span>
-              )}
               {saveStatus === 'saving' && (
                 <span className="flex items-center gap-1 text-xs text-gray-400 font-medium">
                   <Loader2 className="w-3 h-3 animate-spin" />

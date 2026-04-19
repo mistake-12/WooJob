@@ -25,7 +25,7 @@ export interface Job {
   website?: string;
 }
 
-export type TaskType = '面试' | '笔试' | '待投递';
+export type TaskType = '面试' | '笔试' | '待投递' | '待办事项';
 
 export interface Task {
   id: string;
@@ -38,6 +38,7 @@ export interface Task {
   tag: TaskType;
   meetingLink?: string;
   resumeFilename?: string;
+  notes?: string;
   isCompleted: boolean;
 }
 

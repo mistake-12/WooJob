@@ -111,7 +111,7 @@ function TaskCard({ task, setTasks, onOpen }: TaskCardProps) {
           </span>
         )}
         <span
-          className={`text-xs font-medium px-2.5 py-1 rounded-md ${localDone ? 'bg-gray-100 text-gray-400' : (tagColors[task.tag] ?? '')}`}
+          className={`text-xs font-medium px-3 py-1 rounded-full ${localDone ? 'bg-gray-100 text-gray-400' : (tagColors[task.tag] ?? 'bg-[#EBE8E1] text-[#666666]')}`}
         >
           {task.tag}
         </span>
@@ -192,6 +192,7 @@ const tagColors: Record<string, string> = {
   '面试': 'bg-[#EBE8E1] text-[#666666]',
   '笔试': 'bg-[#EBE8E1] text-[#666666]',
   '待投递': 'bg-[#EBE8E1] text-[#666666]',
+  '待办事项': 'bg-[#EBE8E1] text-[#666666]',
 };
 
 export default function AgendaView({ tasks, setTasks }: AgendaViewProps) {
