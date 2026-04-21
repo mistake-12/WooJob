@@ -54,3 +54,25 @@ button {
   cursor: pointer;
   font-family: inherit;
 }
+
+/* Offer 达成时的柔和微震动效 */
+@keyframes offer-shake {
+  0%   { transform: translateX(0)    translateY(0);    }
+  25%  { transform: translateX(-1px)  translateY(-0.5px);}
+  50%  { transform: translateX(0.8px) translateY(0.4px); }
+  75%  { transform: translateX(-0.5px) translateY(-0.2px);}
+  100% { transform: translateX(0)    translateY(0);    }
+}
+
+.animate-offer-shake {
+  animation: offer-shake 0.7s ease-out both;
+}
+
+/* Offer 达成庆典文字淡入淡出 */
+@keyframes celebration-fade {
+  0%   { opacity: 0; transform: scale(0.85); }
+  20%  { opacity: 1; transform: scale(1.05); }
+  35%  { transform: scale(1); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; transform: scale(0.95); }
+}

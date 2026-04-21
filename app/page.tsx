@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
+import confetti from 'canvas-confetti';
 import { Job, JobStage, Task } from '@/types';
 import { mockJobs, mockTasks, mockInterviewSchedules, mockResumeInfo } from '@/lib/mockData';
 import KanbanColumn from '@/components/KanbanColumn';
@@ -20,6 +21,8 @@ export default function Home() {
   const [tasks, setTasks] = useState<Task[]>(mockTasks);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [trashedJobs, setTrashedJobs] = useState<Job[]>([]);
+  const [isShaking, setIsShaking] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
   const [isTrashOpen, setIsTrashOpen] = useState(false);
 
   const jobsByStage = stages.reduce((acc, stage) => {
@@ -33,6 +36,24 @@ export default function Home() {
     const { source, destination, draggableId } = result;
     if (!destination) return;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
+
+    // 防抖：从其他列进入 Offer 列时触发纸屑 + 震动 + 文字
+    if (destination.droppableId === 'Offer' && source.droppableId !== 'Offer') {
+      setIsShaking(true);
+      setShowCelebration(true);
+      setTimeout(() => {
+        setIsShaking(false);
+        setShowCelebration(false);
+      }, 1800);
+
+      confetti({
+        particleCount: 225,
+        spread: 150,
+        origin: { y: 0.6 },
+        colors: ['#8E7E6E', '#C5A059', '#EBE8E1', '#FFFFFF'],
+      });
+    }
+
     const newStage = destination.droppableId as JobStage;
     setJobs((prev) =>
       prev.map((job) => (job.id === draggableId ? { ...job, stage: newStage } : job))
@@ -80,7 +101,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#D1CFCA] flex items-center justify-center p-4">
       {/* 应用主窗口 */}
-      <div className="w-full max-w-[95vw] h-[95vh] bg-[#EBE8E3] rounded-2xl shadow-xl border border-gray-200 overflow-hidden flex flex-col">
+      <div className={`w-full max-w-[95vw] h-[95vh] bg-[#EBE8E3] rounded-2xl shadow-xl border border-gray-200 overflow-hidden flex flex-col ${isShaking ? 'animate-offer-shake' : ''}`}>
         {/* 顶部 Header */}
         <div className="relative px-8 pt-7 pb-5 border-b border-[#CFCCC8] flex-shrink-0">
           <div className="flex items-end justify-between">
@@ -216,6 +237,21 @@ export default function Home() {
           <AISidebar />
         </div>
       </div>
+
+      {/* Offer 达成庆典文字 */}
+      {showCelebration && (
+        <div
+          className="fixed inset-0 flex items-center justify-center pointer-events-none z-50"
+          style={{ animation: 'celebration-fade 1.8s ease-out both' }}
+        >
+          <span
+            className="text-[42px] font-black text-[#8E7E6E] tracking-[0.35em] leading-none select-none"
+            style={{ fontFamily: 'Georgia, "Times New Roman", serif' }}
+          >
+            Congratulations!
+          </span>
+        </div>
+      )}
 
       {/* Side Drawer */}
       {selectedJob && (
