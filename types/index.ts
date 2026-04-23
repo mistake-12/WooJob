@@ -42,12 +42,6 @@ export interface Task {
   isCompleted: boolean;
 }
 
-export interface InterviewSchedule {
-  time: string;
-  title: string;
-  company: string;
-}
-
 export interface ResumeInfo {
   filename: string;
   lastEdited: string;

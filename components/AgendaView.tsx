@@ -286,10 +286,10 @@ const LEFT_SIDEBAR_ITEMS = [
 
 
 const tagColors: Record<string, string> = {
-  '面试': 'bg-[#EBE8E1] text-[#666666]',
-  '笔试': 'bg-[#EBE8E1] text-[#666666]',
-  '待投递': 'bg-[#EBE8E1] text-[#666666]',
-  '待办事项': 'bg-[#EBE8E1] text-[#666666]',
+  '面试': 'bg-[#8B735B]/10 text-[#8B735B]',
+  '笔试': 'bg-[#8B735B]/10 text-[#8B735B]',
+  '待投递': 'bg-[#8B735B]/10 text-[#8B735B]',
+  '待办事项': 'bg-[#8B735B]/10 text-[#8B735B]',
 };
 
 export default function AgendaView({ tasks, setTasks }: AgendaViewProps) {

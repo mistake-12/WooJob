@@ -1,4 +1,12 @@
-import { Job, InterviewSchedule, ResumeInfo, Task } from '@/types';
+import { Job, ResumeInfo, Task } from '@/types';
+
+function getDynamicDate(daysFromNow: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow);
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return `${month}月${day}日`;
+}
 
 export const mockJobs: Job[] = [
   {
@@ -132,7 +140,7 @@ export const mockTasks: Task[] = [
   {
     id: 'task-005',
     jobId: 'job-001',
-    date: '4月20日',
+    date: getDynamicDate(3),
     time: '09:00',
     title: '字节跳动 - 高级产品经理 HR沟通',
     company: '字节跳动',
@@ -144,7 +152,7 @@ export const mockTasks: Task[] = [
   {
     id: 'task-006',
     jobId: 'job-005',
-    date: '4月21日',
+    date: getDynamicDate(4),
     time: '10:00',
     title: '滴滴出行 - 产品经理 终面',
     company: '滴滴出行',
@@ -153,19 +161,6 @@ export const mockTasks: Task[] = [
     meetingLink: '进入会议',
     resumeFilename: '产品主简历_v4.pdf',
     isCompleted: false,
-  },
-];
-
-export const mockInterviewSchedules: InterviewSchedule[] = [
-  {
-    time: '09:00',
-    title: '准备滴滴出行产品案例分析',
-    company: '滴滴出行',
-  },
-  {
-    time: '14:00',
-    title: '滴滴出行技术二面',
-    company: '滴滴出行',
   },
 ];
 

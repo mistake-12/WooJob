@@ -7,9 +7,12 @@ import { Task, TaskType } from '@/types';
 const TASK_TYPE_OPTIONS: TaskType[] = ['面试', '笔试', '待投递', '待办事项'];
 
 interface TaskDetailsProps {
-  task: Task;
+  taskId?: string | null;
+  tasks?: Task[];
+  task?: Task | null;
   onClose: () => void;
   onUpdateTask: (updated: Task) => void;
+  onDeleteTask?: (taskId: string) => void;
 }
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
@@ -20,52 +23,52 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function TaskDetails({ task, onClose, onUpdateTask }: TaskDetailsProps) {
-  const [isEditing, setIsEditing] = useState(false);
+export default function TaskDetails({ taskId, tasks, task: directTask, onClose, onUpdateTask, onDeleteTask }: TaskDetailsProps) {
   const [isVisible, setIsVisible] = useState(false);
+
+  // 获取当前任务：优先使用直接传入的 task，否则通过 taskId 在 tasks 中查找
+  const currentTask = directTask ?? (taskId && tasks ? tasks.find(t => t.id === taskId) : null);
+
+  // 动画进入
+  useEffect(() => {
+    if (currentTask) {
+      requestAnimationFrame(() => setIsVisible(true));
+    }
+  }, [currentTask]);
+
+  const [isEditing, setIsEditing] = useState(!currentTask?.title);
   const [isDirty, setIsDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
-  const [draft, setDraft] = useState({
-    title: task.title,
-    company: task.company,
-    date: task.date,
-    time: task.time,
-    tag: task.tag,
-    round: task.round ?? '',
-    meetingLink: task.meetingLink ?? '',
-    resumeFilename: task.resumeFilename ?? '',
-    isCompleted: task.isCompleted,
-    notes: task.notes ?? '',
+  // 初始化草稿
+  const getInitialDraft = () => ({
+    title: currentTask?.title ?? '',
+    company: currentTask?.company ?? '',
+    date: currentTask?.date ?? '',
+    time: currentTask?.time ?? '',
+    tag: currentTask?.tag ?? '待办事项' as TaskType,
+    round: currentTask?.round ?? '',
+    meetingLink: currentTask?.meetingLink ?? '',
+    resumeFilename: currentTask?.resumeFilename ?? '',
+    isCompleted: currentTask?.isCompleted ?? false,
+    notes: currentTask?.notes ?? '',
   });
 
-  useEffect(() => {
-    requestAnimationFrame(() => setIsVisible(true));
-  }, []);
+  const [draft, setDraft] = useState(getInitialDraft);
 
+  // 当任务切换时重置状态
   useEffect(() => {
-    setDraft({
-      title: task.title,
-      company: task.company,
-      date: task.date,
-      time: task.time,
-      tag: task.tag,
-      round: task.round ?? '',
-      meetingLink: task.meetingLink ?? '',
-      resumeFilename: task.resumeFilename ?? '',
-      isCompleted: task.isCompleted,
-      notes: task.notes ?? '',
-    });
-    setIsEditing(!task.title);
+    setDraft(getInitialDraft());
+    setIsEditing(!currentTask?.title);
     setIsDirty(false);
     setSaveStatus('idle');
-  }, [task.id]);
+  }, [currentTask?.id]);
 
   const saveChanges = useCallback(async () => {
-    if (!isDirty) return;
+    if (!isDirty || !currentTask) return;
     setSaveStatus('saving');
     onUpdateTask({
-      ...task,
+      ...currentTask,
       title: draft.title,
       company: draft.company,
       date: draft.date,
@@ -80,7 +83,7 @@ export default function TaskDetails({ task, onClose, onUpdateTask }: TaskDetails
     setSaveStatus('saved');
     setIsEditing(false);
     setTimeout(() => setSaveStatus('idle'), 2000);
-  }, [isDirty, draft, task, onUpdateTask]);
+  }, [isDirty, draft, currentTask, onUpdateTask]);
 
   const handleClose = async () => {
     if (isDirty) await saveChanges();
@@ -93,22 +96,16 @@ export default function TaskDetails({ task, onClose, onUpdateTask }: TaskDetails
   };
 
   const handleCancel = () => {
-    setDraft({
-      title: task.title,
-      company: task.company,
-      date: task.date,
-      time: task.time,
-      tag: task.tag,
-      round: task.round ?? '',
-      meetingLink: task.meetingLink ?? '',
-      resumeFilename: task.resumeFilename ?? '',
-      isCompleted: task.isCompleted,
-      notes: task.notes ?? '',
-    });
+    setDraft(getInitialDraft());
     setIsEditing(false);
     setIsDirty(false);
     setSaveStatus('idle');
   };
+
+  // 如果没有选中任务，不渲染抽屉
+  if (!currentTask) {
+    return null;
+  }
 
   return (
     <>
@@ -145,7 +142,7 @@ export default function TaskDetails({ task, onClose, onUpdateTask }: TaskDetails
                 </div>
               ) : (
                 <h2 className="text-3xl font-black text-gray-900 leading-tight tracking-tight truncate">
-                  {draft.title}
+                  {draft.title || '未命名任务'}
                 </h2>
               )}
             </div>

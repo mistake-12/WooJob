@@ -16,16 +16,21 @@
   --border-light: #E0DCD1;
 }
 
+html {
+  overflow: hidden;
+}
+
 body {
   font-family: 'Inter', system-ui, sans-serif;
   background-color: var(--bg-main);
   color: var(--text-primary);
+  overflow: hidden;
 }
 
-/* 自定义滚动条 */
+/* 自定义滚动条 - 仅垂直方向 */
 ::-webkit-scrollbar {
   width: 6px;
-  height: 6px;
+  height: 0;
 }
 
 ::-webkit-scrollbar-track {
@@ -53,6 +58,15 @@ button {
   border: none;
   cursor: pointer;
   font-family: inherit;
+}
+
+/* 隐藏滚动条但保持滚动功能 */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Opera */
 }
 
 /* Offer 达成时的柔和微震动效 */

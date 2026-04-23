@@ -4,12 +4,13 @@ import { useState } from 'react';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import confetti from 'canvas-confetti';
 import { Job, JobStage, Task } from '@/types';
-import { mockJobs, mockTasks, mockInterviewSchedules, mockResumeInfo } from '@/lib/mockData';
+import { mockJobs, mockTasks, mockResumeInfo } from '@/lib/mockData';
 import KanbanColumn from '@/components/KanbanColumn';
 import BottomShelf from '@/components/BottomShelf';
 import AISidebar from '@/components/AISidebar';
 import AgendaView from '@/components/AgendaView';
 import SideDrawer from '@/components/SideDrawer';
+import TaskDetails from '@/components/TaskDetails';
 import { Briefcase, Activity, Plus, Trash2, Github } from 'lucide-react';
 import TrashDrawer from '@/components/TrashDrawer';
 
@@ -24,6 +25,7 @@ export default function Home() {
   const [isShaking, setIsShaking] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
   const [isTrashOpen, setIsTrashOpen] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const jobsByStage = stages.reduce((acc, stage) => {
     acc[stage] = jobs.filter((job) => job.stage === stage);
@@ -98,10 +100,33 @@ export default function Home() {
     setJobs((prev) => [...prev, { ...job, stage: '已结束' }]);
   };
 
+  // 任务相关处理函数
+  const handleTaskClick = (taskId: string) => {
+    setSelectedTaskId(taskId);
+  };
+
+  const handleTaskClose = () => {
+    setSelectedTaskId(null);
+  };
+
+  const handleTaskUpdate = (updated: Task) => {
+    setTasks((prev) =>
+      prev.map((t) => (t.id === updated.id ? updated : t))
+    );
+  };
+
+  const handleTaskComplete = (taskId: string) => {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId ? { ...t, isCompleted: true } : t
+      )
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-[#D1CFCA] flex items-center justify-center p-4">
+    <div className="h-screen bg-[#D1CFCA] flex items-center justify-center p-4 overflow-hidden">
       {/* 应用主窗口 */}
-      <div className={`w-full max-w-[95vw] h-[95vh] bg-[#EBE8E3] rounded-2xl shadow-xl border border-gray-200 overflow-hidden flex flex-col ${isShaking ? 'animate-offer-shake' : ''}`}>
+      <div className={`w-full max-w-[95vw] h-full bg-[#EBE8E3] rounded-2xl shadow-xl border border-gray-200 overflow-hidden flex flex-col ${isShaking ? 'animate-offer-shake' : ''}`}>
         {/* 顶部 Header */}
         <div className="relative px-8 pt-7 pb-5 border-b border-[#CFCCC8] flex-shrink-0">
           <div className="flex items-end justify-between">
@@ -227,8 +252,10 @@ export default function Home() {
             {/* 底部区域：仅看板视图显示 */}
             {currentView === 'kanban' && (
               <BottomShelf
-                schedules={mockInterviewSchedules}
+                tasks={tasks}
                 resume={mockResumeInfo}
+                onTaskClick={handleTaskClick}
+                onTaskComplete={handleTaskComplete}
               />
             )}
           </div>
@@ -268,6 +295,14 @@ export default function Home() {
         onRestore={handleRestoreJob}
         isOpen={isTrashOpen}
         onClose={() => setIsTrashOpen(false)}
+      />
+
+      {/* Task Details Drawer */}
+      <TaskDetails
+        taskId={selectedTaskId}
+        tasks={tasks}
+        onClose={handleTaskClose}
+        onUpdateTask={handleTaskUpdate}
       />
     </div>
   );
