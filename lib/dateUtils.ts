@@ -3,6 +3,8 @@
  * 用于将各种日期格式统一处理，并与 Task 类型配合使用
  */
 
+import type { TaskType } from '@/types';
+
 /**
  * 获取今天的日期字符串 (YYYY-MM-DD 格式)
  */
@@ -156,15 +158,28 @@ export function isTaskInTimeRange(
   return true;
 }
 
+export interface Next24HoursTask {
+  id: string;
+  date: string;
+  time: string;
+  title: string;
+  company: string;
+  tag: TaskType;
+  isCompleted: boolean;
+  round?: string;
+  meetingLink?: string;
+  resumeFilename?: string;
+}
+
 /**
  * 获取从当前时刻起接下来24小时内的任务列表
  * @param tasks 任务列表
  * @param excludeCompleted 是否排除已完成的任务
  */
 export function getNext24HoursTasks(
-  tasks: { id: string; date: string; time: string; isCompleted?: boolean }[],
+  tasks: Next24HoursTask[],
   excludeCompleted: boolean = true
-) {
+): Next24HoursTask[] {
   const now = new Date();
 
   return tasks

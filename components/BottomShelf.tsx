@@ -155,7 +155,7 @@ export default function BottomShelf({ tasks, resume, onTaskClick, onTaskComplete
                 <TaskCard
                   task={task}
                   onClick={() => onTaskClick(task.id)}
-                  onComplete={onTaskComplete}
+                  onComplete={onTaskComplete ? () => onTaskComplete(task.id) : undefined}
                 />
                 {index < next24HoursTasks.length - 1 && (
                   <div className="h-px bg-[#DCD9D1] mx-2" />
