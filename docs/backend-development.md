@@ -594,16 +594,201 @@ function mapFrontendTagToDb(key: string): string { ... }
 
 ## 七、开发计划
 
+> **预计总工期：6 个阶段**
+> **当前状态：** ✅ Supabase 客户端 `lib/supabase.ts` 已创建
+
 按以下顺序依次开发：
 
-| 阶段 | 任务 | 文件 | 优先级 |
-|------|------|------|--------|
-| 1 | 创建类型定义文件 | `types/database.ts` | P0 |
-| 2 | 创建辅助函数 | `app/actions/_helpers.ts` | P0 |
-| 3 | 实现 Jobs 全部 Action | `app/actions/jobs.ts` | P0 |
-| 4 | 实现 Tasks 全部 Action | `app/actions/tasks.ts` | P0 |
-| 5 | 实现 Stats Action | `app/actions/stats.ts` | P1 |
-| 6 | 前端联调接入 | 各组件改造 | P1 |
+### 阶段总览
+
+| 阶段 | 任务 | 产出物 | 优先级 |
+|------|------|--------|--------|
+| 0 | Supabase 项目初始化 & SQL 建表 | Supabase Dashboard 中已建好 3 张表 + RLS | P0 |
+| 1 | Supabase Auth 配置 | 邮箱登录 + OAuth（GitHub/Google）可用 | P0 |
+| 2 | 数据库类型定义 | `types/database.ts` | P0 |
+| 3 | 辅助函数 & Jobs Actions | `app/actions/_helpers.ts` + `jobs.ts` | P0 |
+| 4 | Tasks & Stats Actions | `app/actions/tasks.ts` + `stats.ts` | P0 |
+| 5 | Zustand Store 替换 useState | `store/useJobStore.ts` | P1 |
+| 6 | 前端对接 Server Actions | 看板/日程/抽屉组件接入真实数据 | P1 |
+| 7 | Vercel 环境变量配置 | Vercel Dashboard 填写环境变量 | P2 |
+| 8 | 部署上线 | 生产环境验证 | P2 |
+
+---
+
+### 阶段 0：Supabase 项目初始化 & SQL 建表
+
+**操作位置：** Supabase Dashboard → SQL Editor
+
+**步骤：**
+1. 在 Supabase Dashboard 新建 Project（或使用已有项目）
+2. 进入 **SQL Editor**，新建查询，粘贴 `project-instructions.md` 中 `3.3 SQL 初始化脚本` 的全部内容
+3. 点击 **Run**，确认 3 张表（`jobs`、`job_tags`、`tasks`）和所有索引、RLS 策略创建成功
+4. 验证：在 Table Editor 中确认表存在且结构正确
+
+**验收标准：** Supabase Dashboard → Table Editor 中可看到 `jobs`、`job_tags`、`tasks` 三张表，且字段与 schema 一致。
+
+> ⚠️ **注意事项：**
+> - 如果已有项目，请先在本地测试环境执行 SQL，避免覆盖生产数据。
+> - SQL 脚本中的 `deleted_at IS NULL` 过滤是软删除的核心逻辑，不要删除。
+> - RLS 策略在未登录时默认拒绝访问，调试阶段可将策略改为 `FOR ALL TO anon USING (true)` 临时放行。
+
+---
+
+### 阶段 1：Supabase Auth 配置
+
+**操作位置：** Supabase Dashboard → Authentication
+
+**步骤：**
+1. **邮箱登录：**
+   - 进入 Authentication → Providers → Email，启用 Email Provider
+   - 关闭 "Confirm email"（开发阶段方便测试），生产环境建议开启
+   - 设置 Site URL 和 Redirect URLs（开发阶段填 `http://localhost:3000`）
+
+2. **OAuth（GitHub）可选：**
+   - 进入 Authentication → Providers → GitHub
+   - 按提示在 GitHub Developer Settings 创建 OAuth App，获取 Client ID 和 Secret
+   - 填入 Supabase 并启用
+
+3. **Row Level Security 调整：**
+   - 建表时 RLS 已配置 `user_id = auth.uid()`，需要配合 Auth 才能生效
+   - 在 Auth 配置完成后，Server Actions 中通过 `supabase.auth.getUser()` 获取用户 ID 并注入查询
+
+**验收标准：** 用户可以在应用内通过邮箱注册/登录，并在数据库 `auth.users` 表中看到用户记录。
+
+> ⚠️ **注意事项：**
+> - Auth 配置是安全隔离的前提，未配置前所有数据对所有人可见。
+> - OAuth callback URL 必须与 Supabase 和 GitHub 两边都匹配。
+
+---
+
+### 阶段 2：数据库类型定义
+
+**文件：** `types/database.ts`（新建）
+
+**内容：** 在 `types/index.ts` 之外新建 `types/database.ts`，专门存放：
+- `DbJob`、`DbJobTag`、`DbTask`（数据库行类型，snake_case）
+- `JobWithTags`、`TaskWithJob`、`Stats`（API 返回类型，camelCase）
+- `CreateJobInput`、`UpdateJobInput`、`CreateTaskInput`、`UpdateTaskInput`（输入类型）
+- `JobActionResult`、`TaskActionResult` 等统一返回类型
+
+> 原因：`types/index.ts` 是前端 UI 组件使用的类型，与数据库类型分开，避免混淆。
+
+---
+
+### 阶段 3：辅助函数 & Jobs Actions
+
+**文件：** `app/actions/_helpers.ts`、`app/actions/jobs.ts`
+
+#### 3.1 辅助函数 `_helpers.ts`
+
+```typescript
+// 核心转换函数（必须覆盖所有字段）
+export function transformDbJobToJobWithTags(job: DbJob, tags: DbJobTag[]): JobWithTags
+export function transformDbTaskToTaskWithJob(task: DbTask): TaskWithJob
+export function mapFrontendTagToDb(key: string): 'referral' | 'round' | 'interview_time' | 'remaining'
+```
+
+#### 3.2 Jobs Actions `jobs.ts`
+
+| Action | 说明 | 调用时机 |
+|--------|------|---------|
+| `getJobs()` | 获取未删除岗位 | 看板初始化 |
+| `createJob(input)` | 新建岗位卡片 | 新建按钮 |
+| `updateJob(id, input)` | 更新岗位详情 | SideDrawer 保存 |
+| `updateJobStage(id, newStage)` | 拖拽更新阶段 | 看板拖拽松手 |
+| `trashJob(id)` | 软删除岗位 | 删除按钮 |
+| `getTrashedJobs()` | 获取回收站岗位 | TrashDrawer |
+| `restoreJob(id)` | 恢复岗位 | 回收站恢复 |
+| `permanentDeleteJob(id)` | 永久删除 | 回收站彻底删除 |
+
+---
+
+### 阶段 4：Tasks & Stats Actions
+
+**文件：** `app/actions/tasks.ts`、`app/actions/stats.ts`
+
+#### 4.1 Tasks Actions `tasks.ts`
+
+| Action | 说明 | 调用时机 |
+|--------|------|---------|
+| `getTasks(month?)` | 按月获取任务列表 | 日程视图初始化 |
+| `createTask(input)` | 新建日程任务 | 新建任务 |
+| `updateTask(id, input)` | 更新任务详情 | TaskDetails 保存 |
+| `toggleTaskCompletion(id)` | 切换完成状态 | 圆圈点击 |
+
+#### 4.2 Stats Actions `stats.ts`
+
+| Action | 说明 | 调用时机 |
+|--------|------|---------|
+| `getStats()` | 获取统计数据 | Header 右侧指标 |
+
+---
+
+### 阶段 5：Zustand Store 替换 useState
+
+**文件：** `store/useJobStore.ts`（新建）
+
+**设计思路：**
+- 单一 Store 包含 `jobs`、`trashedJobs`、`tasks`、`isLoading` 状态
+- 所有 Server Actions 封装为 Store 的异步方法
+- 对外暴露 `fetchJobs()`、`createJob()`、`updateJobStage()` 等方法
+- 前端组件直接调用 Store 方法，组件本身不再持有 `useState`
+
+> ⚠️ 迁移策略：先创建 Store 并接入一个 Action（如 `getJobs`），验证数据流正确后逐步迁移其他 Action，避免一次性全部替换导致排查困难。
+
+---
+
+### 阶段 6：前端对接 Server Actions
+
+**涉及组件：**
+- `app/page.tsx` — 初始化时调用 `getJobs()` + `getTasks()`
+- `KanbanColumn.tsx` — 拖拽松手调用 `updateJobStage()`
+- `JobCard.tsx` — 卡片操作（新建/删除）
+- `SideDrawer.tsx` — 调用 `updateJob()` 保存
+- `TrashDrawer.tsx` — 调用 `trashJob` / `restoreJob` / `permanentDeleteJob`
+- `AgendaView.tsx` — 调用 `getTasks()`、`toggleTaskCompletion()`
+- `TaskDetails.tsx` — 调用 `updateTask()`
+- `BottomShelf.tsx` — 调用 `getStats()`
+
+**关键改造点：**
+1. 所有组件中的 `useState` 任务/jobs 数据改为从 Zustand Store 读取
+2. `revalidatePath('/')` 由 Server Actions 内部处理，确保 UI 刷新
+3. 拖拽交互使用乐观更新：先修改 Store 状态，Server Action 失败时回滚
+
+---
+
+### 阶段 7：Vercel 环境变量配置
+
+**操作位置：** Vercel Dashboard → 项目 → Settings → Environment Variables
+
+**需要配置的环境变量：**
+
+| 变量名 | 值来源 |
+|--------|--------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Dashboard → Settings → API |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard → Settings → API → anon public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Dashboard → Settings → API → service_role key（仅 Server Side 使用）|
+
+**验收标准：** 在 Vercel 环境变量页面确认 3 个变量已填写，且 `NODE_ENV=production` 自动生效。
+
+> ⚠️ **注意事项：**
+> - `NEXT_PUBLIC_` 前缀的变量会暴露在客户端包中，仅填 URL 和 Anon Key。
+> - `SUPABASE_SERVICE_ROLE_KEY` 不要加 `NEXT_PUBLIC_` 前缀，且仅在 Server Actions 中使用。
+> - 每次修改环境变量后需要 **Redeploy** 才能生效。
+
+---
+
+### 阶段 8：部署上线
+
+**验收检查清单：**
+- [ ] Vercel 构建成功（无 TypeScript 错误）
+- [ ] Supabase Auth 登录/注册流程可用
+- [ ] 看板拖拽新增岗位成功，数据在刷新后保留
+- [ ] 日程视图任务创建/完成状态切换正常
+- [ ] 回收站软删除/恢复/永久删除正常
+- [ ] Header 统计数据正确显示
+- [ ] 移动端布局正常
+- [ ] 打开浏览器 DevTools Console 无报错
 
 ---
 

@@ -2,16 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { X, RotateCcw, Trash2 } from 'lucide-react';
-import { Job } from '@/types';
+import { useJobStore } from '@/store/useJobStore';
 
 interface TrashDrawerProps {
-  trashedJobs: Job[];
-  onRestore: (job: Job) => void;
   isOpen: boolean;
   onClose: () => void;
 }
 
-export default function TrashDrawer({ trashedJobs, onRestore, isOpen, onClose }: TrashDrawerProps) {
+export default function TrashDrawer({ isOpen, onClose }: TrashDrawerProps) {
+  const trashedJobs = useJobStore((s) => s.trashedJobs);
+  const restoreJob = useJobStore((s) => s.restoreJob);
+  const permanentDeleteJob = useJobStore((s) => s.permanentDeleteJob);
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
@@ -80,14 +81,24 @@ export default function TrashDrawer({ trashedJobs, onRestore, isOpen, onClose }:
                     <span className="text-sm font-medium text-gray-900 truncate">{job.company}</span>
                     <span className="text-xs text-[#999999] truncate">{job.title}</span>
                   </div>
-                  <button
-                    onClick={() => onRestore(job)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
-                      bg-[#E5E1DA] text-gray-600 hover:bg-gray-200 transition-colors flex-shrink-0"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    恢复
-                  </button>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => restoreJob(job.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
+                        bg-[#E5E1DA] text-gray-600 hover:bg-gray-200 transition-colors"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      恢复
+                    </button>
+                    <button
+                      onClick={() => permanentDeleteJob(job.id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
+                        bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      删除
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

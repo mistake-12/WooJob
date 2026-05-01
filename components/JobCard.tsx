@@ -7,12 +7,11 @@ import { GripVertical, Calendar, Trash2 } from 'lucide-react';
 interface JobCardProps {
   job: Job;
   index: number;
-  setJobs: React.Dispatch<React.SetStateAction<Job[]>>;
   onOpen: (job: Job) => void;
   onTrash?: (job: Job) => void;
 }
 
-export default function JobCard({ job, index, setJobs, onOpen, onTrash }: JobCardProps) {
+export default function JobCard({ job, index, onOpen, onTrash }: JobCardProps) {
   const isEnded = job.stage === '已结束';
 
   /* 计算进度百分比：基础阶段 + 面试中轮次细分 */

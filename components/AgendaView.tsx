@@ -2,13 +2,11 @@
 
 import { useState } from 'react';
 import { Task } from '@/types';
+import { useJobStore } from '@/store/useJobStore';
 import TaskDetails from './TaskDetails';
 import { Plus } from 'lucide-react';
 
-interface AgendaViewProps {
-  tasks: Task[];
-  setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
-}
+interface AgendaViewProps {}
 
 interface AgendaSection {
   date: string; // 纯日期字符串，用于匹配任务 date 字段
@@ -125,18 +123,16 @@ function CheckIcon() {
 
 interface TaskCardProps {
   task: Task;
-  setTasks: React.Dispatch<React.SetStateAction<Task[]>>;
   onOpen: (task: Task) => void;
 }
 
-function TaskCard({ task, setTasks, onOpen }: TaskCardProps) {
+function TaskCard({ task, onOpen }: TaskCardProps) {
   const [localDone, setLocalDone] = useState(task.isCompleted);
+  const toggleTaskCompletion = useJobStore((s) => s.toggleTaskCompletion);
 
   function toggle() {
     setLocalDone((v) => !v);
-    setTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, isCompleted: !t.isCompleted } : t))
-    );
+    toggleTaskCompletion(task.id);
   }
 
   return (
@@ -277,22 +273,17 @@ function dayToDateLabel(day: number | null): string | null {
   return formatDateToISO(new Date(TODAY.getFullYear(), TODAY.getMonth(), day));
 }
 
-const LEFT_SIDEBAR_ITEMS = [
-  { label: '全部待办', count: 5 },
-  { label: '近期面试', count: 2 },
-  { label: '近期笔试', count: 1 },
-  { label: '已投递待回', count: 2 },
-];
-
-
-const tagColors: Record<string, string> = {
+  const tagColors: Record<string, string> = {
   '面试': 'bg-[#8B735B]/10 text-[#8B735B]',
   '笔试': 'bg-[#8B735B]/10 text-[#8B735B]',
   '待投递': 'bg-[#8B735B]/10 text-[#8B735B]',
   '待办事项': 'bg-[#8B735B]/10 text-[#8B735B]',
 };
 
-export default function AgendaView({ tasks, setTasks }: AgendaViewProps) {
+export default function AgendaView({}: AgendaViewProps) {
+  const tasks = useJobStore((s) => s.tasks);
+  const updateTask = useJobStore((s) => s.updateTask);
+  const createTask = useJobStore((s) => s.createTask);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
@@ -312,6 +303,18 @@ export default function AgendaView({ tasks, setTasks }: AgendaViewProps) {
 
   // ── Step 3 & 4: 筛选侧边栏按钮 ──────────────────────────
   const isAllActive = selectedDate === null;
+
+  // ── 动态计算筛选数量 ───────────────────────────────────────
+  const interviewCount = tasks.filter((t) => t.tag === '面试' && !t.isCompleted).length;
+  const examCount = tasks.filter((t) => t.tag === '笔试' && !t.isCompleted).length;
+  const pendingCount = tasks.filter((t) => t.tag === '待投递' && !t.isCompleted).length;
+
+  const LEFT_SIDEBAR_ITEMS = [
+    { label: '全部待办', count: tasks.filter((t) => !t.isCompleted).length },
+    { label: '近期面试', count: interviewCount },
+    { label: '近期笔试', count: examCount },
+    { label: '已投递待回', count: pendingCount },
+  ];
 
   return (
     <>
@@ -407,56 +410,102 @@ export default function AgendaView({ tasks, setTasks }: AgendaViewProps) {
       </aside>
 
       {/* ── 右侧主列表 ───────────────────────────── */}
-      <main className="flex-1 min-w-0 overflow-y-auto p-8">
-        <div className="w-full">
-          {sections.length === 0 ? (
-            /* 无任务时的空状态提示 */
-            <div className="flex items-center justify-center h-48">
-              <p className="text-sm text-gray-300">
-                {selectedDate ? `${isoToDateLabel(selectedDate)}没有待办事项` : '暂无待办事项'}
+      <main className="flex-1 flex flex-col w-full min-w-0 overflow-hidden p-8">
+        {/* 固定顶部操作栏 — 永远撑满宽度，防止塌陷 */}
+        <div className="flex items-center justify-between w-full shrink-0 mb-5">
+          {/* 左侧：日期标题 / 空状态占位文字 */}
+          <h2 className="text-2xl font-black text-gray-900 leading-none tracking-tight">
+            {filteredTasks.length === 0 && !selectedDate
+              ? '今日待办'
+              : filteredTasks.length === 0
+                ? `${isoToDateLabel(selectedDate ?? '')}没有待办`
+                : isoToDateLabel(sections[0]?.date ?? '')}
+            <span className="text-base font-medium text-[#666666] ml-3 tracking-normal">
+              {filteredTasks.length === 0
+                ? selectedDate
+                  ? `${getLabelForDateLabel(isoToDateLabel(selectedDate)).sub} ${getLabelForDateLabel(isoToDateLabel(selectedDate)).weekday}`
+                  : ''
+                : `${getLabelForDateLabel(isoToDateLabel(sections[0].date)).sub} ${getLabelForDateLabel(isoToDateLabel(sections[0].date)).weekday}`}
+            </span>
+          </h2>
+
+          {/* 右侧：【+ 创建任务】按钮 — 始终固定在右上角 */}
+          <button
+            onClick={() => setSelectedTask({
+              id: `new-${Date.now()}`,
+              title: '',
+              date: selectedDate ?? formatDateToISO(TODAY),
+              time: '',
+              company: '',
+              tag: '待办事项',
+              isCompleted: false,
+            })}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
+              bg-white border border-gray-200 text-[#8B735B]
+              hover:bg-[#EBE8E1] hover:border-[#D8D4CE] hover:text-[#7A6650]
+              transition-all duration-200 cursor-pointer shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            创建任务
+          </button>
+        </div>
+
+        {/* 任务列表 — 可滚动区域 */}
+        <div className="flex-1 overflow-y-auto w-full">
+          {filteredTasks.length === 0 ? (
+            /* 空状态：居中 CTA 组件 */
+            <div className="flex flex-col items-center justify-center flex-1 h-full min-h-[400px]">
+              {/* 视觉锚点 */}
+              <div className="w-16 h-16 mb-6 rounded-full bg-[#F5F2EE] flex items-center justify-center">
+                <svg
+                  className="w-10 h-10 text-[#8B735B]"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5"
+                  />
+                </svg>
+              </div>
+
+              {/* 文字区 */}
+              <h3 className="text-xl font-bold text-gray-900 mb-2">今日待办</h3>
+              <p className="text-sm text-gray-500 mb-8 max-w-xs text-center leading-relaxed">
+                这里目前空空如也，您可以去喝杯咖啡，或者规划一下接下来的面试安排。
               </p>
+
+              {/* 内联 CTA */}
+              <button
+                onClick={() => setSelectedTask({
+                  id: `new-${Date.now()}`,
+                  title: '',
+                  date: selectedDate ?? formatDateToISO(TODAY),
+                  time: '',
+                  company: '',
+                  tag: '待办事项',
+                  isCompleted: false,
+                })}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium
+                  text-[#8E7E6E] bg-[#EBE8E1] hover:bg-[#DCD9D1]
+                  rounded-md transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                新建待办事项
+              </button>
             </div>
           ) : (
-            sections.map((section, idx) => {
+            sections.map((section) => {
               const friendlyLabel = isoToDateLabel(section.date);
-              const label = getLabelForDateLabel(friendlyLabel);
-              const isFirst = idx === 0;
               return (
                 <section key={section.date} className="mb-10 last:mb-0">
-                  {/* 日期分组头 */}
-                  <div className="mb-5 flex items-center justify-between">
-                    <h2 className="text-2xl font-black text-gray-900 leading-none tracking-tight">
-                      {friendlyLabel}
-                      <span className="text-base font-medium text-[#666666] ml-3 tracking-normal">
-                        {label.sub} {label.weekday}
-                      </span>
-                    </h2>
-                    {isFirst && (
-                      <button
-                        onClick={() => setSelectedTask({
-                          id: `new-${Date.now()}`,
-                          title: '',
-                          date: friendlyLabel,
-                          time: '',
-                          company: '',
-                          tag: '待办事项',
-                          isCompleted: false,
-                        })}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
-                          bg-white border border-gray-200 text-[#8B735B]
-                          hover:bg-[#EBE8E1] hover:border-[#D8D4CE] hover:text-[#7A6650]
-                          transition-all duration-200 cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        创建任务
-                      </button>
-                    )}
-                  </div>
-
                   {/* 任务卡片列表 */}
                   <div className="space-y-3">
                     {section.tasks.map((task) => (
-                      <TaskCard key={task.id} task={task} setTasks={setTasks} onOpen={setSelectedTask} />
+                      <TaskCard key={task.id} task={task} onOpen={setSelectedTask} />
                     ))}
                   </div>
                 </section>
@@ -475,12 +524,30 @@ export default function AgendaView({ tasks, setTasks }: AgendaViewProps) {
         onUpdateTask={(updated) => {
           const isNew = updated.id.startsWith('new-');
           if (isNew) {
-            // 新建：生成真实 ID，加入 tasks 列表
-            setTasks((prev) => [{ ...updated, id: `task-${Date.now()}` }, ...prev]);
+            createTask({
+              title: updated.title,
+              company: updated.company,
+              taskDate: updated.date,
+              taskTime: updated.time,
+              tag: updated.tag,
+              round: updated.round,
+              meetingLink: updated.meetingLink,
+              resumeFilename: updated.resumeFilename,
+              notes: updated.notes,
+            });
             setSelectedTask(null);
           } else {
-            // 编辑：原地替换
-            setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+            updateTask(updated.id, {
+              title: updated.title,
+              company: updated.company,
+              taskDate: updated.date,
+              taskTime: updated.time || null,
+              tag: updated.tag,
+              round: updated.round || null,
+              meetingLink: updated.meetingLink || null,
+              resumeFilename: updated.resumeFilename || null,
+              notes: updated.notes || null,
+            });
             setSelectedTask(updated);
           }
         }}

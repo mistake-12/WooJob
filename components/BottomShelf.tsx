@@ -1,21 +1,18 @@
 'use client';
 
 import { useRef } from 'react';
-import { Task, TaskType, ResumeInfo } from '@/types';
-import { Download, FileText, Check, Plus } from 'lucide-react';
+import { Task, TaskType } from '@/types';
+import { useJobStore } from '@/store/useJobStore';
 import { getNext24HoursTasks, isoToDateLabel } from '@/lib/dateUtils';
+import { Download, FileText, Check, Plus } from 'lucide-react';
 
 interface BottomShelfProps {
-  tasks: Task[];
-  resume: ResumeInfo;
   onTaskClick: (taskId: string) => void;
-  onTaskComplete?: (taskId: string) => void;
 }
 
 interface TaskCardProps {
   task: Task;
   onClick: () => void;
-  onComplete?: () => void;
 }
 
 const TAG_STYLES: Record<TaskType, { bg: string; text: string }> = {
@@ -63,7 +60,8 @@ function UploadButton() {
   );
 }
 
-function TaskCard({ task, onClick, onComplete }: TaskCardProps) {
+function TaskCard({ task, onClick }: TaskCardProps) {
+  const toggleTaskCompletion = useJobStore((s) => s.toggleTaskCompletion);
   const tagStyle = TAG_STYLES[task.tag] || TAG_STYLES['待办事项'];
   const dateLabel = isoToDateLabel(task.date);
 
@@ -97,29 +95,29 @@ function TaskCard({ task, onClick, onComplete }: TaskCardProps) {
       </span>
 
       {/* 完成按钮 */}
-      {!task.isCompleted && onComplete ? (
+      {!task.isCompleted ? (
         <button
           onClick={(e) => {
             e.stopPropagation();
-            onComplete();
+            toggleTaskCompletion(task.id);
           }}
           className="w-5 h-5 rounded-full border-2 border-[#8B735B]/30 hover:border-[#8B735B] hover:bg-[#8B735B]/10 flex items-center justify-center transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
           title="标记完成"
         >
           <span className="sr-only">标记完成</span>
         </button>
-      ) : task.isCompleted ? (
+      ) : (
         <span className="w-5 h-5 rounded-full bg-[#8B735B] flex items-center justify-center flex-shrink-0">
           <Check className="w-3 h-3 text-white" />
         </span>
-      ) : (
-        <div className="w-5 h-5 flex-shrink-0" />
       )}
     </div>
   );
 }
 
-export default function BottomShelf({ tasks, resume, onTaskClick, onTaskComplete }: BottomShelfProps) {
+export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
+  const tasks = useJobStore((s) => s.tasks);
+  const toggleTaskCompletion = useJobStore((s) => s.toggleTaskCompletion);
   const next24HoursTasks = getNext24HoursTasks(tasks);
 
   return (
@@ -155,7 +153,6 @@ export default function BottomShelf({ tasks, resume, onTaskClick, onTaskComplete
                 <TaskCard
                   task={task}
                   onClick={() => onTaskClick(task.id)}
-                  onComplete={onTaskComplete ? () => onTaskComplete(task.id) : undefined}
                 />
                 {index < next24HoursTasks.length - 1 && (
                   <div className="h-px bg-[#DCD9D1] mx-2" />
@@ -184,10 +181,10 @@ export default function BottomShelf({ tasks, resume, onTaskClick, onTaskComplete
               </div>
               <div>
                 <p className="text-sm font-medium text-[#111111] truncate max-w-[160px]">
-                  {resume.filename}
+                  产品经理_主简历_v4.pdf
                 </p>
                 <p className="text-xs text-[#666666] mt-0.5">
-                  上次编辑: {resume.lastEdited}
+                  上次编辑: 2天前
                 </p>
               </div>
             </div>

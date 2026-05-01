@@ -6,13 +6,14 @@ import {
   Calendar, Clock, User, Tag, Link, Loader2
 } from 'lucide-react';
 import { Job, JobStage } from '@/types';
+import { useJobStore } from '@/store/useJobStore';
 
 type Tab = 'details' | 'assets' | 'notes';
 
 interface SideDrawerProps {
-  job: Job;
+  jobId: string;
   onClose: () => void;
-  onUpdate: (updated: Job) => void;
+  onUpdate: (id: string, updated: Partial<Job>) => void;
 }
 
 const STAGES: JobStage[] = ['待投递', '已投递', '笔试中', '面试中', 'Offer', '已结束'];
@@ -29,26 +30,30 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) {
+export default function SideDrawer({ jobId, onClose, onUpdate }: SideDrawerProps) {
+  const getJobById = useJobStore((s) => s.getJobById);
+  const job = getJobById(jobId);
+  const isNewJob = jobId.startsWith('new-');
+
   const [activeTab, setActiveTab] = useState<Tab>('details');
   const [isEditing, setIsEditing] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
 
-  /* 编辑状态的本地副本 */
+  /* 编辑状态的本地副本 — 新建岗位时使用空值 */
   const [draft, setDraft] = useState({
-    company: job.company,
-    title: job.title,
-    deadline: job.deadline,
-    time: job.time ?? '',
-    stage: job.stage,
-    referral: job.tags.referral ?? ('' as '' | typeof REFERRAL_OPTIONS[number]),
-    round: job.tags.round ?? '',
-    interviewTime: job.tags.interviewTime ?? '',
-    website: job.website ?? '',
-    description: job.description ?? '',
-    notes: job.notes ?? '',
+    company: '',
+    title: '',
+    deadline: '',
+    time: '',
+    stage: '待投递' as JobStage,
+    referral: '' as '' | typeof REFERRAL_OPTIONS[number],
+    round: '',
+    interviewTime: '',
+    website: '',
+    description: '',
+    notes: '',
   });
 
   useEffect(() => {
@@ -57,36 +62,38 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
 
   /* 同步外部 job 变化（切换卡片时重置）；新建空岗位时强制进入编辑模式 */
   useEffect(() => {
-    setDraft({
-      company: job.company,
-      title: job.title,
-      deadline: job.deadline,
-      time: job.time ?? '',
-      stage: job.stage,
-      referral: job.tags.referral ?? ('' as '' | typeof REFERRAL_OPTIONS[number]),
-      round: job.tags.round ?? '',
+    if (job && !isNewJob) {
+      setDraft({
+        company: job.company,
+        title: job.title,
+        deadline: job.deadline,
+        time: job.time ?? '',
+        stage: job.stage,
+        referral: job.tags.referral ?? ('' as '' | typeof REFERRAL_OPTIONS[number]),
+        round: job.tags.round ?? '',
         interviewTime: job.tags.interviewTime ?? '',
-      website: job.website ?? '',
-      description: job.description ?? '',
-      notes: job.notes ?? '',
-    });
-    setIsEditing(!job.company); // 空岗位自动进入编辑模式
+        website: job.website ?? '',
+        description: job.description ?? '',
+        notes: job.notes ?? '',
+      });
+      setIsEditing(false);
+    } else {
+      setIsEditing(true);
+    }
     setIsDirty(false);
     setSaveStatus('idle');
-  }, [job.id]);
+  }, [jobId, job, isNewJob]);
 
   const saveChanges = useCallback(async () => {
     if (!isDirty) return;
     setSaveStatus('saving');
-    onUpdate({
-      ...job,
+    onUpdate(jobId, {
       company: draft.company,
       title: draft.title,
       deadline: draft.deadline,
       time: draft.time || undefined,
       stage: draft.stage,
       tags: {
-        ...job.tags,
         referral: draft.referral || undefined,
         round: draft.round || undefined,
         interviewTime: draft.interviewTime || undefined,
@@ -99,7 +106,7 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
     setSaveStatus('saved');
     setIsEditing(false);
     setTimeout(() => setSaveStatus('idle'), 2000);
-  }, [isDirty, draft, job, onUpdate]);
+  }, [isDirty, draft, jobId, onUpdate]);
 
   const handleClose = async () => {
     if (isDirty) await saveChanges();
@@ -112,19 +119,35 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
   };
 
   const handleCancel = () => {
-    setDraft({
-      company: job.company,
-      title: job.title,
-      deadline: job.deadline,
-      time: job.time ?? '',
-      stage: job.stage,
-      referral: job.tags.referral ?? ('' as '' | typeof REFERRAL_OPTIONS[number]),
-      round: job.tags.round ?? '',
-      interviewTime: job.tags.interviewTime ?? '',
-      website: job.website ?? '',
-      description: job.description ?? '',
-      notes: job.notes ?? '',
-    });
+    if (job && !isNewJob) {
+      setDraft({
+        company: job.company,
+        title: job.title,
+        deadline: job.deadline,
+        time: job.time ?? '',
+        stage: job.stage,
+        referral: job.tags.referral ?? ('' as '' | typeof REFERRAL_OPTIONS[number]),
+        round: job.tags.round ?? '',
+        interviewTime: job.tags.interviewTime ?? '',
+        website: job.website ?? '',
+        description: job.description ?? '',
+        notes: job.notes ?? '',
+      });
+    } else {
+      setDraft({
+        company: '',
+        title: '',
+        deadline: '',
+        time: '',
+        stage: '待投递',
+        referral: '',
+        round: '',
+        interviewTime: '',
+        website: '',
+        description: '',
+        notes: '',
+      });
+    }
     setIsEditing(false);
     setIsDirty(false);
     setSaveStatus('idle');
@@ -136,8 +159,8 @@ export default function SideDrawer({ job, onClose, onUpdate }: SideDrawerProps) 
   };
 
   const handleNotesBlur = () => {
-    if (draft.notes !== job.notes) {
-      onUpdate({ ...job, notes: draft.notes || undefined });
+    if (job && !isNewJob && draft.notes !== job.notes) {
+      onUpdate(jobId, { notes: draft.notes || undefined });
     }
   };
 

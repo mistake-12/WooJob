@@ -3,15 +3,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { X, Pencil, Check, ExternalLink, Loader2 } from 'lucide-react';
 import { Task, TaskType } from '@/types';
+import { useJobStore } from '@/store/useJobStore';
 
 const TASK_TYPE_OPTIONS: TaskType[] = ['面试', '笔试', '待投递', '待办事项'];
 
 interface TaskDetailsProps {
   taskId?: string | null;
-  tasks?: Task[];
   task?: Task | null;
   onClose: () => void;
-  onUpdateTask: (updated: Task) => void;
+  onUpdateTask?: (updated: Task) => void;
   onDeleteTask?: (taskId: string) => void;
 }
 
@@ -23,11 +23,14 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function TaskDetails({ taskId, tasks, task: directTask, onClose, onUpdateTask, onDeleteTask }: TaskDetailsProps) {
+export default function TaskDetails({ taskId, task: directTask, onClose, onUpdateTask, onDeleteTask }: TaskDetailsProps) {
+  const getTaskById = useJobStore((s) => s.getTaskById);
+  const updateTaskAction = useJobStore((s) => s.updateTask);
+  const createTaskAction = useJobStore((s) => s.createTask);
   const [isVisible, setIsVisible] = useState(false);
 
-  // 获取当前任务：优先使用直接传入的 task，否则通过 taskId 在 tasks 中查找
-  const currentTask = directTask ?? (taskId && tasks ? tasks.find(t => t.id === taskId) : null);
+  // 获取当前任务：优先使用传入的 task，否则通过 taskId 在 Store 中查找
+  const currentTask = directTask ?? (taskId ? getTaskById(taskId) : null);
 
   // 动画进入
   useEffect(() => {
@@ -67,7 +70,8 @@ export default function TaskDetails({ taskId, tasks, task: directTask, onClose, 
   const saveChanges = useCallback(async () => {
     if (!isDirty || !currentTask) return;
     setSaveStatus('saving');
-    onUpdateTask({
+
+    const updated: Task = {
       ...currentTask,
       title: draft.title,
       company: draft.company,
@@ -78,12 +82,41 @@ export default function TaskDetails({ taskId, tasks, task: directTask, onClose, 
       meetingLink: draft.meetingLink || undefined,
       resumeFilename: draft.resumeFilename || undefined,
       notes: draft.notes || undefined,
-    });
+    };
+
+    if (onUpdateTask) {
+      onUpdateTask(updated);
+    } else if (currentTask.id.startsWith('new-')) {
+      await createTaskAction({
+        title: draft.title,
+        company: draft.company,
+        taskDate: draft.date,
+        taskTime: draft.time,
+        tag: draft.tag,
+        round: draft.round || undefined,
+        meetingLink: draft.meetingLink || undefined,
+        resumeFilename: draft.resumeFilename || undefined,
+        notes: draft.notes || undefined,
+      });
+    } else {
+      await updateTaskAction(currentTask.id, {
+        title: draft.title,
+        company: draft.company,
+        taskDate: draft.date,
+        taskTime: draft.time || null,
+        tag: draft.tag,
+        round: draft.round || null,
+        meetingLink: draft.meetingLink || null,
+        resumeFilename: draft.resumeFilename || null,
+        notes: draft.notes || null,
+      });
+    }
+
     setIsDirty(false);
     setSaveStatus('saved');
     setIsEditing(false);
     setTimeout(() => setSaveStatus('idle'), 2000);
-  }, [isDirty, draft, currentTask, onUpdateTask]);
+  }, [isDirty, draft, currentTask, onUpdateTask, updateTaskAction, createTaskAction]);
 
   const handleClose = async () => {
     if (isDirty) await saveChanges();
