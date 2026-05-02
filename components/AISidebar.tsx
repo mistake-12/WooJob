@@ -31,7 +31,7 @@ export default function AISidebar() {
   const [inputValue, setInputValue] = useState('');
   const [showConversationList, setShowConversationList] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const currentConversation = aiConversations.find((c) => c.id === aiCurrentConversationId);
