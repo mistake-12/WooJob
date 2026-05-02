@@ -46,6 +46,9 @@ export default function Home() {
   const [profileSaveMsg, setProfileSaveMsg] = useState('');
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
+  // Header 显示用的昵称（用于右上角头像和用户名）
+  const [displayNickname, setDisplayNickname] = useState('');
+
   // 弹窗打开时加载 profile 数据
   useEffect(() => {
     if (!isProfileModalOpen) return;
@@ -57,6 +60,15 @@ export default function Home() {
       }
     });
   }, [isProfileModalOpen]);
+
+  // 初始化时加载 profile 数据（用于 Header 显示）
+  useEffect(() => {
+    getProfile().then((result) => {
+      if (result.profile?.nickname) {
+        setDisplayNickname(result.profile.nickname);
+      }
+    });
+  }, []);
 
   async function handleSaveProfile() {
     setIsSavingProfile(true);
@@ -70,6 +82,8 @@ export default function Home() {
       setProfileSaveMsg(`保存失败：${result.error}`);
     } else {
       setProfileSaveMsg('保存成功');
+      // 保存成功后同步 Header 显示的昵称
+      setDisplayNickname(profileNickname || '');
       setTimeout(() => {
         setIsProfileModalOpen(false);
         setProfileSaveMsg('');
@@ -179,9 +193,9 @@ export default function Home() {
   }
 
   return (
-    <div className="h-screen bg-[#D1CFCA] flex items-center justify-center p-4 overflow-hidden">
+    <div className="h-screen w-screen overflow-hidden flex items-center justify-center bg-[#D1CFCA]">
       {/* 应用主窗口 */}
-      <div className={`w-full max-w-[95vw] h-full bg-[#EBE8E3] rounded-2xl shadow-xl border border-gray-200 overflow-hidden flex flex-col ${isShaking ? 'animate-offer-shake' : ''}`}>
+      <div className={`w-full max-w-[95vw] h-[95vh] bg-[#EBE8E3] rounded-2xl shadow-xl border border-gray-200 flex flex-col overflow-hidden ${isShaking ? 'animate-offer-shake' : ''}`}>
         {/* 顶部 Header */}
         <div className="relative px-8 pt-7 pb-5 border-b border-[#CFCCC8] flex-shrink-0">
           <div className="flex items-end justify-between">
@@ -268,11 +282,11 @@ export default function Home() {
                   title="个人中心"
                 >
                   <div className="w-5 h-5 rounded-full bg-[#8E7E6E] text-white flex items-center justify-center text-xs font-bold shadow-sm">
-                    S
+                    {displayNickname ? displayNickname.charAt(0).toUpperCase() : 'U'}
                   </div>
                   <div className="flex flex-col items-start">
                     <p className="text-xs font-medium text-[#8B735B] leading-none">用户</p>
-                    <p className="text-2xl font-bold text-gray-900 leading-none tracking-tight">用户123</p>
+                    <p className="text-2xl font-bold text-gray-900 leading-none tracking-tight">{displayNickname || '用户'}</p>
                   </div>
                 </button>
 
@@ -315,11 +329,11 @@ export default function Home() {
         <div className="flex flex-1 min-h-0 overflow-hidden">
           <div className="flex-1 flex flex-col px-8 pb-8 overflow-hidden">
             {/* 中间内容容器：占满剩余高度 */}
-            <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               {currentView === 'kanban' ? (
-                <div className="relative flex-1 flex flex-col overflow-hidden">
+                <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
                   <DragDropContext onDragEnd={onDragEnd}>
-                    <div className="flex gap-0 overflow-x-auto pb-4 flex-1 items-stretch">
+                    <div className="flex gap-0 flex-1 min-h-0 overflow-x-auto overflow-y-hidden items-stretch">
                       {stages.map((stage) => (
                         <KanbanColumn
                           key={stage}

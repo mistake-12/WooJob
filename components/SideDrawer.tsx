@@ -411,7 +411,7 @@ export default function SideDrawer({ jobId, onClose, onUpdate }: SideDrawerProps
       {/* Backdrop */}
       <div
         className={`fixed inset-0 bg-black/25 backdrop-blur-[3px] z-[100] transition-opacity duration-300 ${
-          isVisible ? 'opacity-100' : 'opacity-0'
+          isVisible ? 'opacity-100' : 'opacity-0 invisible pointer-events-none'
         }`}
         onClick={handleClose}
       />
@@ -422,7 +422,7 @@ export default function SideDrawer({ jobId, onClose, onUpdate }: SideDrawerProps
           flex flex-col shadow-[0_-4px_40px_rgba(0,0,0,0.15)]
           rounded-t-2xl
           transition-transform duration-300 ease-out
-          ${isVisible ? 'translate-y-0' : 'translate-y-full'}`}
+          ${isVisible ? 'translate-y-0' : 'translate-y-full invisible pointer-events-none'}`}
       >
         {/* Header */}
         <div className="px-8 pt-6 pb-4 border-b border-[#D8D4CE] flex-shrink-0">

@@ -76,10 +76,18 @@ export async function createJob(
   try {
     const supabase = await createServerSupabaseClient();
 
+    // 获取当前用户 ID（RLS 依赖 user_id）
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      console.error('[createJob] Not authenticated');
+      return { error: '未登录或会话已过期' };
+    }
+
     // 1. 插入 jobs 表
     const { data: job, error: jobError } = await supabase
       .from('jobs')
       .insert({
+        user_id: user.id,
         company: input.company,
         title: input.title,
         stage: input.stage ?? '待投递',

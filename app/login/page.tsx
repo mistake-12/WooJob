@@ -3,19 +3,15 @@
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { signInWithEmail, signUpWithEmail } from '@/app/actions/auth';
 import { supabase } from '@/lib/supabase';
 import { Eye, EyeOff } from 'lucide-react';
 
 type AuthAction = typeof signInWithEmail;
 
-function SubmitButton({
-  pending,
-  label,
-}: {
-  pending: boolean;
-  label: string;
-}) {
+function SubmitButton({ label }: { label: string }) {
+  const { pending } = useFormStatus();
   return (
     <button
       type="submit"
@@ -39,14 +35,14 @@ function EmailForm({
   buttonLabel: string;
   errorFromUrl?: string;
 }) {
-  const [state, isPending] = useActionState(action, null);
+  const [state, formAction] = useActionState(action, null);
   const [showPassword, setShowPassword] = useState(false);
 
   // 优先显示 URL 参数中的错误，其次显示 action 返回的错误
   const displayError = errorFromUrl ?? state?.error;
 
   return (
-    <form action={action} className="space-y-3">
+    <form action={formAction} className="space-y-3">
       {displayError && (
         <p className="text-xs text-red-500 bg-red-50 border border-red-200
           rounded-md px-3 py-2 text-center">
@@ -99,7 +95,7 @@ function EmailForm({
         </button>
       </div>
 
-      <SubmitButton pending={isPending} label={buttonLabel} />
+      <SubmitButton label={buttonLabel} />
     </form>
   );
 }

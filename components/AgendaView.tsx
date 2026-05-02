@@ -55,8 +55,9 @@ function groupTasksByDate(tasks: Task[]): AgendaSection[] {
   const sections: AgendaSection[] = [];
   for (const [date, dateTasks] of grouped) {
     const sorted = dateTasks.sort((a, b) => {
-      const timeA = a.time ? `1970-01-01T${a.time}:00` : '1970-01-01T23:59:59';
-      const timeB = b.time ? `1970-01-01T${b.time}:00` : '1970-01-01T23:59:59';
+      // 截取 HH:mm 用于比较（去掉秒）
+      const timeA = a.time ? `1970-01-01T${a.time.slice(0, 5)}:00` : '1970-01-01T23:59:59';
+      const timeB = b.time ? `1970-01-01T${b.time.slice(0, 5)}:00` : '1970-01-01T23:59:59';
       return timeA.localeCompare(timeB);
     });
     sections.push({ date, tasks: sorted });
@@ -106,11 +107,52 @@ function formatDateToISO(d: Date): string {
 function isoToDateLabel(iso: string): string {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const target = new Date(iso);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const target = new Date(iso + 'T00:00:00');
   const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
   if (diff === 0) return '今天';
   if (diff === 1) return '明天';
   return `${target.getMonth() + 1}月${target.getDate()}日`;
+}
+
+const WEEKDAYS_SHORT = ['日', '一', '二', '三', '四', '五', '六'];
+
+/** 格式化 ISO 日期为 "5月3日 星期日"，若为今天/明天则加 "今天 · " / "明天 · " 前缀 */
+function formatHeaderDate(isoDate: string): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const target = new Date(isoDate + 'T00:00:00');
+  const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
+
+  const monthDay = `${target.getMonth() + 1}月${target.getDate()}日`;
+  const weekday = `星期${WEEKDAYS_SHORT[target.getDay()]}`;
+
+  if (diff === 0) return `今天 · ${monthDay} ${weekday}`;
+  if (diff === 1) return `明天 · ${monthDay} ${weekday}`;
+  return `${monthDay} ${weekday}`;
+}
+
+/** 格式化日期为分组标题，如 "今天 5月2日 星期六" */
+function formatDateHeader(isoDate: string): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const target = new Date(isoDate + 'T00:00:00');
+  const diff = Math.round((target.getTime() - today.getTime()) / 86400000);
+
+  const monthDay = `${target.getMonth() + 1}月${target.getDate()}日`;
+  const weekday = `星期${WEEKDAYS_SHORT[target.getDay()]}`;
+
+  if (diff === 0) return `今天 ${monthDay} ${weekday}`;
+  if (diff === 1) return `明天 ${monthDay} ${weekday}`;
+  return `${monthDay} ${weekday}`;
 }
 
 function CheckIcon() {
@@ -157,22 +199,22 @@ function TaskCard({ task, onOpen }: TaskCardProps) {
         >
           {localDone && <CheckIcon />}
         </div>
-        {/* 时间 */}
+        {/* 时间（只显示 HH:mm，去掉秒） */}
         <span className={`text-sm font-medium leading-none whitespace-nowrap ${localDone ? 'text-gray-300' : 'text-gray-400'}`}>
-          {task.time}
+          {task.time ? task.time.slice(0, 5) : ''}
         </span>
         {/* 分割点 */}
         <div className="w-1 h-1 rounded-full bg-gray-300 flex-shrink-0" />
       </div>
 
-      {/* 中间：核心标题区（弹性撑满） */}
+        {/* 中间：核心标题区（弹性撑满） */}
       <div className="flex-1 flex flex-col min-w-0 pr-4">
         <p className={`text-sm truncate leading-snug ${localDone ? 'line-through text-gray-400' : 'font-semibold text-gray-900'}`}>
           {task.title}
         </p>
-        {task.round && (
+        {task.company && (
           <p className={`text-xs mt-0.5 leading-none ${localDone ? 'text-gray-300' : 'text-gray-400'}`}>
-            {task.round}
+            {task.company}
           </p>
         )}
       </div>
@@ -285,7 +327,15 @@ export default function AgendaView({}: AgendaViewProps) {
   const updateTask = useJobStore((s) => s.updateTask);
   const createTask = useJobStore((s) => s.createTask);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+
+  /** 当前筛选条件：日期筛选 | 标签筛选 | 无筛选（全不选） */
+  const [selectedFilter, setSelectedFilter] = useState<{
+    type: 'date';
+    value: string;
+  } | {
+    type: 'tag';
+    value: string;
+  } | null>(null);
 
   const year = TODAY.getFullYear();
   const month = TODAY.getMonth();
@@ -295,14 +345,13 @@ export default function AgendaView({}: AgendaViewProps) {
   // ── 提取全局所有任务日期（小圆点 & 筛选用），统一转为 ISO 格式 ─
   const allTaskDates = new Set(tasks.map((t) => normalizeDateLabel(t.date)));
 
-  // ── 动态过滤列表（按 ISO 日期匹配）──────────────────────
-  const filteredTasks = selectedDate
-    ? tasks.filter((t) => normalizeDateLabel(t.date) === selectedDate)
+  // ── 动态过滤列表（支持日期筛选或标签筛选）──────────────────────
+  const filteredTasks = selectedFilter
+    ? selectedFilter.type === 'date'
+      ? tasks.filter((t) => normalizeDateLabel(t.date) === selectedFilter.value)
+      : tasks.filter((t) => t.tag === selectedFilter.value)
     : tasks;
   const sections = groupTasksByDate(filteredTasks);
-
-  // ── Step 3 & 4: 筛选侧边栏按钮 ──────────────────────────
-  const isAllActive = selectedDate === null;
 
   // ── 动态计算筛选数量 ───────────────────────────────────────
   const interviewCount = tasks.filter((t) => t.tag === '面试' && !t.isCompleted).length;
@@ -311,9 +360,9 @@ export default function AgendaView({}: AgendaViewProps) {
 
   const LEFT_SIDEBAR_ITEMS = [
     { label: '全部待办', count: tasks.filter((t) => !t.isCompleted).length },
-    { label: '近期面试', count: interviewCount },
-    { label: '近期笔试', count: examCount },
-    { label: '已投递待回', count: pendingCount },
+    { label: '近期面试', count: interviewCount, filter: { type: 'tag' as const, value: '面试' } },
+    { label: '近期笔试', count: examCount, filter: { type: 'tag' as const, value: '笔试' } },
+    { label: '待投递', count: pendingCount, filter: { type: 'tag' as const, value: '待投递' } },
   ];
 
   return (
@@ -340,16 +389,22 @@ export default function AgendaView({}: AgendaViewProps) {
             {grid.map((d, i) => {
               const dateLabel = dayToDateLabel(d);
               const hasTask = dateLabel !== null && allTaskDates.has(dateLabel);
-              const isSelected = dateLabel !== null && dateLabel === selectedDate;
+              const isSelected = dateLabel !== null && selectedFilter?.type === 'date' && selectedFilter.value === dateLabel;
               const isToday = d === day;
 
               return (
                 <div key={i} className="relative aspect-square flex items-center justify-center">
                   {d !== null ? (
                     <button
-                      onClick={() => setSelectedDate(dateLabel)}
+                      onClick={() => {
+                        if (selectedFilter?.type === 'date' && selectedFilter.value === dateLabel) {
+                          setSelectedFilter(null);
+                        } else {
+                          setSelectedFilter({ type: 'date', value: dateLabel! });
+                        }
+                      }}
                       className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] transition-colors
-                        ${isSelected
+                        ${(selectedFilter?.type === 'date' && selectedFilter.value === dateLabel)
                           ? 'bg-gray-900 text-white font-semibold'
                           : isToday
                             ? 'bg-[#EBE8E1] text-gray-900 font-semibold'
@@ -358,7 +413,7 @@ export default function AgendaView({}: AgendaViewProps) {
                     >
                       {d}
                       {/* 有任务的灰色小圆点 */}
-                      {hasTask && !isSelected && (
+                      {hasTask && !(selectedFilter?.type === 'date' && selectedFilter.value === dateLabel) && (
                         <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 bg-gray-400 rounded-full" />
                       )}
                     </button>
@@ -375,36 +430,55 @@ export default function AgendaView({}: AgendaViewProps) {
             筛选
           </p>
           <div className="space-y-0">
-            {/* 全部待办 — 受 selectedDate 控制 */}
+            {/* 全部待办 — 清除所有筛选 */}
             <button
-              onClick={() => setSelectedDate(null)}
+              onClick={() => setSelectedFilter(null)}
               className={`w-full flex items-center justify-between py-2.5 px-3 rounded-md text-sm transition-colors
-                ${isAllActive
+                ${selectedFilter === null
                   ? 'text-gray-900 font-semibold bg-black/4'
                   : 'text-gray-500 hover:bg-black/4 hover:text-gray-800'
                 }`}
             >
               <div className="flex items-center gap-2">
-                {isAllActive && (
+                {selectedFilter === null && (
                   <div className="w-0.5 h-3.5 bg-gray-900 rounded-full" />
                 )}
                 <span>全部待办</span>
               </div>
-                <span className={`text-xs ${isAllActive ? 'text-gray-500' : 'text-[#666666]'}`}>
+                <span className={`text-xs ${selectedFilter === null ? 'text-gray-500' : 'text-[#666666]'}`}>
                 {tasks.length}
                 </span>
             </button>
 
-            {/* 其他固定分类 */}
-            {LEFT_SIDEBAR_ITEMS.slice(1).map((item) => (
-              <button
-                key={item.label}
-                className="w-full flex items-center justify-between py-2.5 px-3 rounded-md text-sm text-gray-500 hover:bg-black/4 hover:text-gray-800 transition-colors"
-              >
-                <span>{item.label}</span>
-                <span className="text-xs text-[#666666]">{item.count}</span>
-              </button>
-            ))}
+            {/* 其他分类 — 按 tag 筛选 */}
+            {LEFT_SIDEBAR_ITEMS.slice(1).map((item) => {
+              const isActive = selectedFilter?.type === 'tag' && selectedFilter.value === item.filter?.value;
+              return (
+                <button
+                  key={item.label}
+                  onClick={() => {
+                    if (isActive) {
+                      setSelectedFilter(null);
+                    } else {
+                      setSelectedFilter(item.filter!);
+                    }
+                  }}
+                  className={`w-full flex items-center justify-between py-2.5 px-3 rounded-md text-sm transition-colors
+                    ${isActive
+                      ? 'text-gray-900 font-semibold bg-black/4'
+                      : 'text-gray-500 hover:bg-black/4 hover:text-gray-800'
+                    }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {isActive && (
+                      <div className="w-0.5 h-3.5 bg-gray-900 rounded-full" />
+                    )}
+                    <span>{item.label}</span>
+                  </div>
+                  <span className={`text-xs ${isActive ? 'text-gray-500' : 'text-[#666666]'}`}>{item.count}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </aside>
@@ -413,20 +487,13 @@ export default function AgendaView({}: AgendaViewProps) {
       <main className="flex-1 flex flex-col w-full min-w-0 overflow-hidden p-8">
         {/* 固定顶部操作栏 — 永远撑满宽度，防止塌陷 */}
         <div className="flex items-center justify-between w-full shrink-0 mb-5">
-          {/* 左侧：日期标题 / 空状态占位文字 */}
-          <h2 className="text-2xl font-black text-gray-900 leading-none tracking-tight">
-            {filteredTasks.length === 0 && !selectedDate
-              ? '今日待办'
-              : filteredTasks.length === 0
-                ? `${isoToDateLabel(selectedDate ?? '')}没有待办`
-                : isoToDateLabel(sections[0]?.date ?? '')}
-            <span className="text-base font-medium text-[#666666] ml-3 tracking-normal">
-              {filteredTasks.length === 0
-                ? selectedDate
-                  ? `${getLabelForDateLabel(isoToDateLabel(selectedDate)).sub} ${getLabelForDateLabel(isoToDateLabel(selectedDate)).weekday}`
-                  : ''
-                : `${getLabelForDateLabel(isoToDateLabel(sections[0].date)).sub} ${getLabelForDateLabel(isoToDateLabel(sections[0].date)).weekday}`}
-            </span>
+          {/* 左侧：动态大字标题 */}
+          <h2 className="text-3xl font-black text-gray-900 leading-none tracking-tight">
+            {selectedFilter?.type === 'tag'
+              ? selectedFilter.value
+              : selectedFilter?.type === 'date'
+                ? formatHeaderDate(selectedFilter.value)
+                : '全部待办'}
           </h2>
 
           {/* 右侧：【+ 创建任务】按钮 — 始终固定在右上角 */}
@@ -434,10 +501,10 @@ export default function AgendaView({}: AgendaViewProps) {
             onClick={() => setSelectedTask({
               id: `new-${Date.now()}`,
               title: '',
-              date: selectedDate ?? formatDateToISO(TODAY),
+              date: selectedFilter?.type === 'date' ? selectedFilter.value : formatDateToISO(TODAY),
               time: '',
               company: '',
-              tag: '待办事项',
+              tag: selectedFilter?.type === 'tag' ? selectedFilter.value as Task['tag'] : '待办事项',
               isCompleted: false,
             })}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
@@ -473,7 +540,13 @@ export default function AgendaView({}: AgendaViewProps) {
               </div>
 
               {/* 文字区 */}
-              <h3 className="text-xl font-bold text-gray-900 mb-2">今日待办</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                {selectedFilter?.type === 'tag'
+                  ? `暂无${selectedFilter.value}`
+                  : selectedFilter?.type === 'date'
+                    ? `${formatHeaderDate(selectedFilter.value)}暂无待办`
+                    : '暂无待办'}
+              </h3>
               <p className="text-sm text-gray-500 mb-8 max-w-xs text-center leading-relaxed">
                 这里目前空空如也，您可以去喝杯咖啡，或者规划一下接下来的面试安排。
               </p>
@@ -483,10 +556,10 @@ export default function AgendaView({}: AgendaViewProps) {
                 onClick={() => setSelectedTask({
                   id: `new-${Date.now()}`,
                   title: '',
-                  date: selectedDate ?? formatDateToISO(TODAY),
+                  date: selectedFilter?.type === 'date' ? selectedFilter.value : formatDateToISO(TODAY),
                   time: '',
                   company: '',
-                  tag: '待办事项',
+                  tag: selectedFilter?.type === 'tag' ? selectedFilter.value as Task['tag'] : '待办事项',
                   isCompleted: false,
                 })}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium
@@ -498,19 +571,22 @@ export default function AgendaView({}: AgendaViewProps) {
               </button>
             </div>
           ) : (
-            sections.map((section) => {
-              const friendlyLabel = isoToDateLabel(section.date);
-              return (
-                <section key={section.date} className="mb-10 last:mb-0">
-                  {/* 任务卡片列表 */}
-                  <div className="space-y-3">
-                    {section.tasks.map((task) => (
-                      <TaskCard key={task.id} task={task} onOpen={setSelectedTask} />
-                    ))}
-                  </div>
-                </section>
-              );
-            })
+            sections.map((section) => (
+              <section key={section.date} className="mb-10 last:mb-0">
+                {/* 日期分组标题 — 精确单日视图（date 筛选）时不显示；其余情况均显示 */}
+                {selectedFilter?.type !== 'date' && (
+                  <h3 className="text-xl font-bold text-gray-900 mt-8 mb-4 leading-none">
+                    {formatDateHeader(section.date)}
+                  </h3>
+                )}
+                {/* 任务卡片列表 */}
+                <div className="space-y-3">
+                  {section.tasks.map((task) => (
+                    <TaskCard key={task.id} task={task} onOpen={setSelectedTask} />
+                  ))}
+                </div>
+              </section>
+            ))
           )}
         </div>
       </main>

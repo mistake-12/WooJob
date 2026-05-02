@@ -20,10 +20,16 @@ export async function getTasks(
 
   try {
     const supabase = await getSupabase();
+
+    // 用 gte/lt 做日期范围过滤，避免 LIKE 字符串匹配在跨月边界出错
+    const startDate = `${targetMonth}-01`;
+    const nextMonth = targetMonth.slice(0, 5) + String(parseInt(targetMonth.slice(5, 7)) + 1).padStart(2, '0') + '-01';
+
     const { data: tasks, error } = await supabase
       .from('tasks')
       .select('*')
-      .like('task_date', `${targetMonth}%`)
+      .gte('task_date', startDate)
+      .lt('task_date', nextMonth)
       .order('task_date', { ascending: true })
       .order('task_time', { ascending: true });
 
@@ -50,9 +56,18 @@ export async function createTask(
 
   try {
     const supabase = await getSupabase();
+
+    // 获取当前用户 ID（RLS 依赖 user_id）
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      console.error('[createTask] Not authenticated');
+      return { error: '未登录或会话已过期' };
+    }
+
     const { data: task, error } = await supabase
       .from('tasks')
       .insert({
+        user_id: user.id,
         title: input.title,
         company: input.company ?? null,
         task_date: input.taskDate,

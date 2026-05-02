@@ -18,6 +18,9 @@ import { normalizeToISODate } from '@/lib/dateUtils';
 import * as jobsActions from '@/app/actions/jobs';
 import * as tasksActions from '@/app/actions/tasks';
 import * as statsActions from '@/app/actions/stats';
+import * as aiActions from '@/app/actions/ai';
+import type { AIConversation, AIMessage, AIMessageAttachment, AIParsedData } from '@/types/database';
+import type { AIMode } from '@/app/actions/ai-helpers';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 组件用类型（继承自 types/index.ts，但 id/jobId 统一为 string）
@@ -97,6 +100,39 @@ interface JobStore {
 
   // ── Stats Actions ───────────────────────────────────────────────────────
   fetchStats: () => Promise<void>;
+
+  // ── AI 对话 ────────────────────────────────────────────────────────────────
+  /** 对话列表 */
+  aiConversations: AIConversation[];
+  /** 当前选中的会话 ID */
+  aiCurrentConversationId: string | null;
+  /** 当前会话消息列表 */
+  aiMessages: AIMessage[];
+  /** 是否正在等待 AI 回复 */
+  aiIsLoading: boolean;
+  /** AI 错误信息 */
+  aiError: string | null;
+  /** 当前 AI 模式 */
+  aiMode: AIMode;
+  /** 解析出的结构化数据（用于确认弹窗） */
+  aiParsedData: AIParsedData | null;
+  /** AI 欢迎语 */
+  aiWelcomeMessage: string;
+
+  /** 加载对话列表 */
+  fetchConversations: () => Promise<void>;
+  /** 创建新对话并切换 */
+  startNewConversation: (title?: string) => Promise<string | null>;
+  /** 切换到指定对话，加载其消息 */
+  switchConversation: (id: string) => Promise<void>;
+  /** 删除对话 */
+  deleteConversation: (id: string) => Promise<void>;
+  /** 发送消息（自动追加用户消息 + AI 回复） */
+  sendAIMessage: (content: string, attachments?: AIMessageAttachment[]) => Promise<void>;
+  /** 设置当前 AI 模式 */
+  setAIMode: (mode: AIMode) => void;
+  /** 清除解析数据（用户取消确认时） */
+  clearAIParsedData: () => void;
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   getJobById: (id: string) => Job | undefined;
@@ -196,6 +232,16 @@ export const useJobStore = create<JobStore>((set, get) => ({
   isLoading: false,
   error: null,
 
+  // ── AI 对话 State ──────────────────────────────────────────────────────
+  aiConversations: [],
+  aiCurrentConversationId: null,
+  aiMessages: [],
+  aiIsLoading: false,
+  aiError: null,
+  aiMode: 'chat',
+  aiParsedData: null,
+  aiWelcomeMessage: '有什么求职问题可以随时问我！',
+
   // ── Jobs ────────────────────────────────────────────────────────────────
 
   fetchJobs: async () => {
@@ -216,6 +262,7 @@ export const useJobStore = create<JobStore>((set, get) => ({
       set({ isLoading: false, error: result.error ?? 'Failed to create job' });
       return null;
     }
+    // 直接使用服务端返回的完整 job 数据（包含真实 id、created_at 等）
     const job = dbJobToUiJob(result.job);
     set((s) => ({ jobs: [job, ...s.jobs], isLoading: false }));
     return job;
@@ -345,6 +392,104 @@ export const useJobStore = create<JobStore>((set, get) => ({
     if (result.stats) {
       set({ stats: result.stats });
     }
+  },
+
+  // ── AI 对话 Actions ────────────────────────────────────────────────────
+
+  fetchConversations: async () => {
+    const result = await aiActions.getConversations();
+    if (result.error) return;
+    set({ aiConversations: result.conversations ?? [] });
+  },
+
+  startNewConversation: async (title?: string) => {
+    const result = await aiActions.createConversation(title);
+    if (result.error || !result.conversation) return null;
+    set((s) => ({
+      aiConversations: [result.conversation!, ...s.aiConversations],
+      aiCurrentConversationId: result.conversation!.id,
+      aiMessages: [],
+      aiError: null,
+      aiWelcomeMessage: '有什么求职问题可以随时问我！',
+    }));
+    return result.conversation!.id;
+  },
+
+  switchConversation: async (id: string) => {
+    const result = await aiActions.getMessages(id);
+    if (result.error) {
+      set({ aiError: result.error });
+      return;
+    }
+    set({
+      aiCurrentConversationId: id,
+      aiMessages: result.messages ?? [],
+      aiError: null,
+      aiWelcomeMessage: '有什么求职问题可以随时问我！',
+    });
+  },
+
+  deleteConversation: async (id: string) => {
+    const result = await aiActions.deleteConversation(id);
+    if (result.error) return;
+    const prev = get();
+    set((s) => ({
+      aiConversations: s.aiConversations.filter((c) => c.id !== id),
+      aiCurrentConversationId:
+        prev.aiCurrentConversationId === id ? null : prev.aiCurrentConversationId,
+      aiMessages: prev.aiCurrentConversationId === id ? [] : prev.aiMessages,
+    }));
+  },
+
+  sendAIMessage: async (content, attachments = []) => {
+    const { aiCurrentConversationId, aiMode } = get();
+    if (!aiCurrentConversationId) return;
+
+    // 乐观追加用户消息
+    const tempUserMsg: AIMessage = {
+      id: `temp-${Date.now()}`,
+      conversationId: aiCurrentConversationId,
+      role: 'user',
+      content,
+      attachments,
+      extraData: null,
+      createdAt: new Date().toISOString(),
+    };
+    set((s) => ({
+      aiMessages: [...s.aiMessages, tempUserMsg],
+      aiIsLoading: true,
+      aiError: null,
+      aiParsedData: null,
+    }));
+
+    const result = await aiActions.sendMessage({
+      conversationId: aiCurrentConversationId,
+      content,
+      attachments,
+      mode: aiMode,
+    });
+
+    if (result.error) {
+      set({ aiIsLoading: false, aiError: result.error });
+      return;
+    }
+
+    // 追加 AI 回复
+    if (result.message) {
+      set((s) => ({
+        aiMessages: [...s.aiMessages, result.message!],
+        aiIsLoading: false,
+        aiParsedData: result.parsedData ?? null,
+      }));
+    }
+  },
+
+  setAIMode: (mode) => {
+    set({ aiMode: mode });
+  },
+
+  clearAIParsedData: () => {
+    set({ aiParsedData: null });
   },
 
   // ── Helpers ─────────────────────────────────────────────────────────────

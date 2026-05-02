@@ -211,3 +211,45 @@ export interface UpdateProfileInput {
   nickname?: string | null;
   target_role?: string | null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI / LLM 相关类型
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** AI 会话 */
+export interface AIConversation {
+  id: string;
+  userId: string;
+  title: string;
+  model: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** AI 消息角色 */
+export type AIMessageRole = 'user' | 'assistant' | 'system';
+
+/** AI 消息附件（图片等） */
+export interface AIMessageAttachment {
+  type: 'image_url';
+  url: string; // base64 data URL 或外部 URL
+}
+
+/** AI 单条消息 */
+export interface AIMessage {
+  id: string;
+  conversationId: string;
+  role: AIMessageRole;
+  content: string;
+  attachments: AIMessageAttachment[];
+  extraData: AIParsedData | null;
+  createdAt: string;
+}
+
+/** AI 解析出的结构化数据 */
+export interface AIParsedData {
+  type: 'job' | 'task' | null;
+  job?: Partial<CreateJobInput>;
+  task?: Partial<CreateTaskInput>;
+}
+

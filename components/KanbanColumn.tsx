@@ -42,7 +42,7 @@ export default function KanbanColumn({ title, jobs, onOpenJob, onAddJob, onTrash
           <div
             ref={provided.innerRef}
             {...provided.droppableProps}
-            className={`flex flex-col gap-3 px-3 pt-3 flex-1 transition-all duration-200 ${
+            className={`flex flex-col gap-3 px-3 pt-3 flex-1 overflow-y-auto transition-all duration-200 ${
               snapshot.isDraggingOver ? 'bg-[#E0DDD6] shadow-[inset_0_2px_8px_rgba(0,0,0,0.06)]' : ''
             }`}
           >
