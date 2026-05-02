@@ -1,6 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
 
 // ─── 内部辅助 ────────────────────────────────────────────────────────────────
@@ -93,11 +94,13 @@ export async function signOut(): Promise<void> {
  * 登录成功后会回调到 /auth/callback，由该路由处理 session cookie
  */
 export async function signInWithGithub(): Promise<void> {
+  const headersList = await headers();
+  const origin = headersList.get('origin') ?? '';
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'github',
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? ''}/auth/callback`,
+      redirectTo: `${origin}/auth/callback`,
     },
   });
 

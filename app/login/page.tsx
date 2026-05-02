@@ -101,11 +101,13 @@ function EmailForm({
 }
 
 async function handleGithubSignIn() {
+  const redirectTo =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/auth/callback`
+      : '';
   await supabase.auth.signInWithOAuth({
     provider: 'github',
-    options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
-    },
+    options: { redirectTo },
   });
 }
 
