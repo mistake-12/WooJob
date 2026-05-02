@@ -4,7 +4,7 @@
  * 纯同步工具函数模块，不包含任何 Server Actions
  */
 
-import type { CreateJobInput, CreateTaskInput } from '@/types/database';
+import type { CreateJobInput, CreateTaskInput, JobTags } from '@/types/database';
 
 /** AI 工作模式 */
 export type AIMode = 'chat' | 'extract_job' | 'extract_task';
@@ -123,9 +123,9 @@ export function parseStructuredOutput(
             website: job.website as CreateJobInput['website'],
             description: job.description as CreateJobInput['description'],
             tags: {
-              referral: job.referral as CreateJobInput['tags']['referral'],
-              round: job.round as CreateJobInput['tags']['round'],
-              interviewTime: job.interviewTime as CreateJobInput['tags']['interviewTime'],
+              referral: job.referral as JobTags['referral'],
+              round: job.round as JobTags['round'],
+              interviewTime: job.interviewTime as JobTags['interviewTime'],
             },
           },
         };
