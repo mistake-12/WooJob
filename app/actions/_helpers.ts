@@ -74,6 +74,7 @@ export function transformDbJobToJobWithTags(
     description: job.description,
     notes: job.notes,
     progress: job.progress,
+    position: job.position ?? 0,
     createdAt: job.created_at,
     updatedAt: job.updated_at,
     tags: tagsResult,

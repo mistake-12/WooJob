@@ -21,6 +21,7 @@ export const mockJobs: Job[] = [
       round: '技术二面',
     },
     progress: 75,
+    position: 0,
   },
   {
     id: 'job-002',
@@ -33,6 +34,7 @@ export const mockJobs: Job[] = [
       referral: '学长',
     },
     progress: 25,
+    position: 0,
   },
   {
     id: 'job-003',
@@ -45,6 +47,7 @@ export const mockJobs: Job[] = [
       referral: '无',
     },
     progress: 5,
+    position: 0,
   },
   {
     id: 'job-004',
@@ -57,6 +60,7 @@ export const mockJobs: Job[] = [
       round: '笔试中',
     },
     progress: 50,
+    position: 0,
   },
   {
     id: 'job-005',
@@ -70,6 +74,7 @@ export const mockJobs: Job[] = [
       round: '终面',
     },
     progress: 75,
+    position: 1,
   },
   {
     id: 'job-006',
@@ -82,6 +87,7 @@ export const mockJobs: Job[] = [
       referral: '无',
     },
     progress: 100,
+    position: 0,
   },
 ];
 

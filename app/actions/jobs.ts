@@ -15,7 +15,16 @@ import {
 } from './_helpers';
 
 /**
- * 获取当前用户所有未删除的岗位
+ * 批量更新顺序的输入类型
+ */
+export interface JobOrderUpdate {
+  id: string;
+  position: number;
+  stage?: string;
+}
+
+/**
+ * 获取当前用户所有未删除的岗位（按 position 排序）
  */
 export async function getJobs(): Promise<{ jobs?: JobWithTags[]; error?: string }> {
   console.log('[getJobs] Fetching jobs...');
@@ -27,7 +36,7 @@ export async function getJobs(): Promise<{ jobs?: JobWithTags[]; error?: string 
       .from('jobs')
       .select('*')
       .is('deleted_at', null)
-      .order('created_at', { ascending: false });
+      .order('position', { ascending: true });
 
     console.log('[getJobs] Query result, count:', jobs?.length ?? 0, 'error:', error);
 
@@ -66,6 +75,51 @@ export async function getJobs(): Promise<{ jobs?: JobWithTags[]; error?: string 
 }
 
 /**
+ * 批量更新多个岗位的 position 和可选的 stage
+ * 用于拖拽排序和跨列移动
+ */
+export async function updateJobsOrder(
+  updates: JobOrderUpdate[]
+): Promise<{ success: boolean; error?: string }> {
+  console.log('[updateJobsOrder] Updating order for', updates.length, 'jobs');
+
+  try {
+    const supabase = await createServerSupabaseClient();
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { success: false, error: '未登录或会话已过期' };
+
+    // 逐个更新以确保原子性，且仅修改属于当前用户的岗位
+    for (const update of updates) {
+      const updateFields: Record<string, unknown> = {
+        position: update.position,
+        updated_at: new Date().toISOString(),
+      };
+      if (update.stage) {
+        updateFields.stage = update.stage;
+      }
+
+      const { error } = await supabase
+        .from('jobs')
+        .update(updateFields)
+        .eq('id', update.id)
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('[updateJobsOrder] Failed to update job', update.id, error);
+        return { success: false, error: error.message };
+      }
+    }
+
+    console.log('[updateJobsOrder] Done');
+    return { success: true };
+  } catch (err) {
+    console.error('[updateJobsOrder] Unexpected error:', err);
+    return { success: false, error: 'Failed to update jobs order' };
+  }
+}
+
+/**
  * 新建一个岗位卡片
  */
 export async function createJob(
@@ -83,6 +137,19 @@ export async function createJob(
       return { error: '未登录或会话已过期' };
     }
 
+    // 获取该阶段最大的 position，新卡片插入到末尾
+    const { data: maxPosData } = await supabase
+      .from('jobs')
+      .select('position')
+      .eq('stage', input.stage ?? '待投递')
+      .is('deleted_at', null)
+      .order('position', { ascending: false })
+      .limit(1);
+
+    const nextPosition = maxPosData && maxPosData.length > 0
+      ? ((maxPosData[0] as { position?: number }).position ?? 0) + 1
+      : 0;
+
     // 1. 插入 jobs 表
     const { data: job, error: jobError } = await supabase
       .from('jobs')
@@ -96,6 +163,7 @@ export async function createJob(
         website: input.website ?? null,
         description: input.description ?? null,
         progress: 10,
+        position: nextPosition,
       })
       .select()
       .single();
@@ -153,15 +221,20 @@ export async function updateJob(
   try {
     const supabase = await createServerSupabaseClient();
 
-    // 1. 检查是否存在
+    // 鉴权：确保操作用户拥有该岗位
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
+    // 1. 检查是否存在且属于当前用户
     const { data: existing, error: fetchError } = await supabase
       .from('jobs')
       .select('*')
       .eq('id', id)
+      .eq('user_id', user.id)
       .single();
 
     if (fetchError || !existing) {
-      console.log('[updateJob] Job not found:', id);
+      console.log('[updateJob] Job not found or not owned:', id);
       return { error: fetchError?.message ?? 'Job not found' };
     }
 
@@ -181,18 +254,18 @@ export async function updateJob(
         .from('jobs')
         .update(updateFields)
         .eq('id', id)
+        .eq('user_id', user.id)
         .select()
         .single();
 
       console.log('[updateJob] Update result, error:', updateError);
 
       if (updateError) return { error: updateError.message };
-      existing._for_test = updated as DbJob;
     }
 
     // 3. 更新 tags（删除旧标签 + 插入新标签）
     if (input.tags) {
-      // 删除旧标签
+      // 删除旧标签（job_tags 通过 job_id 隔离，无需额外 user_id 过滤）
       await supabase.from('job_tags').delete().eq('job_id', id);
 
       // 插入新标签
@@ -245,10 +318,14 @@ export async function updateJobStage(
   try {
     const supabase = await createServerSupabaseClient();
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
     const { data: job, error } = await supabase
       .from('jobs')
       .update({ stage: newStage })
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
 
@@ -283,10 +360,14 @@ export async function trashJob(
   try {
     const supabase = await createServerSupabaseClient();
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { success: false, error: '未登录或会话已过期' };
+
     const { error } = await supabase
       .from('jobs')
       .update({ deleted_at: new Date().toISOString() })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('user_id', user.id);
 
     if (error) {
       console.log('[trashJob] Failed:', error.message);
@@ -358,10 +439,14 @@ export async function restoreJob(
   try {
     const supabase = await createServerSupabaseClient();
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
     const { data: job, error } = await supabase
       .from('jobs')
       .update({ deleted_at: null, stage: '已结束' })
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
 
@@ -396,11 +481,15 @@ export async function permanentDeleteJob(
   try {
     const supabase = await createServerSupabaseClient();
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { success: false, error: '未登录或会话已过期' };
+
     // job_tags 会通过 ON DELETE CASCADE 自动清理
     const { error } = await supabase
       .from('jobs')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('user_id', user.id);
 
     if (error) {
       console.log('[permanentDeleteJob] Failed:', error.message);

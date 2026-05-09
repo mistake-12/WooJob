@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { X, Pencil, Check, ExternalLink, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Pencil, Check, ExternalLink } from 'lucide-react';
 import { Task, TaskType } from '@/types';
 import { useJobStore } from '@/store/useJobStore';
 
@@ -42,6 +42,8 @@ export default function TaskDetails({ taskId, task: directTask, onClose, onUpdat
   const [isEditing, setIsEditing] = useState(!currentTask?.title);
   const [isDirty, setIsDirty] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [timeError, setTimeError] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // 初始化草稿
   const getInitialDraft = () => ({
@@ -65,74 +67,92 @@ export default function TaskDetails({ taskId, task: directTask, onClose, onUpdat
     setIsEditing(!currentTask?.title);
     setIsDirty(false);
     setSaveStatus('idle');
+    setTimeError(false);
+    setSaveError(null);
   }, [currentTask?.id]);
-
-  const saveChanges = useCallback(async () => {
-    if (!isDirty || !currentTask) return;
-    setSaveStatus('saving');
-
-    const updated: Task = {
-      ...currentTask,
-      title: draft.title,
-      company: draft.company,
-      date: draft.date,
-      time: draft.time,
-      tag: draft.tag,
-      round: draft.round || undefined,
-      meetingLink: draft.meetingLink || undefined,
-      resumeFilename: draft.resumeFilename || undefined,
-      notes: draft.notes || undefined,
-    };
-
-    if (onUpdateTask) {
-      onUpdateTask(updated);
-    } else if (currentTask.id.startsWith('new-')) {
-      await createTaskAction({
-        title: draft.title,
-        company: draft.company,
-        taskDate: draft.date,
-        taskTime: draft.time,
-        tag: draft.tag,
-        round: draft.round || undefined,
-        meetingLink: draft.meetingLink || undefined,
-        resumeFilename: draft.resumeFilename || undefined,
-        notes: draft.notes || undefined,
-      });
-    } else {
-      await updateTaskAction(currentTask.id, {
-        title: draft.title,
-        company: draft.company,
-        taskDate: draft.date,
-        taskTime: draft.time || null,
-        tag: draft.tag,
-        round: draft.round || null,
-        meetingLink: draft.meetingLink || null,
-        resumeFilename: draft.resumeFilename || null,
-        notes: draft.notes || null,
-      });
-    }
-
-    setIsDirty(false);
-    setSaveStatus('saved');
-    setIsEditing(false);
-    setTimeout(() => setSaveStatus('idle'), 2000);
-  }, [isDirty, draft, currentTask, onUpdateTask, updateTaskAction, createTaskAction]);
-
-  const handleClose = async () => {
-    if (isDirty) await saveChanges();
-    setIsVisible(false);
-    setTimeout(onClose, 300);
-  };
-
-  const handleSave = () => {
-    saveChanges();
-  };
 
   const handleCancel = () => {
     setDraft(getInitialDraft());
     setIsEditing(false);
     setIsDirty(false);
     setSaveStatus('idle');
+    setSaveError(null);
+  };
+
+  /** 点击遮罩关闭：直接关闭，不触发保存（有脏数据时静默丢弃） */
+  const handleClose = () => {
+    setIsVisible(false);
+    setTimeout(onClose, 300);
+  };
+
+  /** 立即保存：不等待网络，让 Store 的乐观更新先行 */
+  const handleSave = () => {
+    if (!draft.time) {
+      setTimeError(true);
+      return;
+    }
+    setTimeError(false);
+
+    if (!isDirty || !currentTask) return;
+
+    // UI 立刻进入"已保存"态，关闭编辑，关闭抽屉
+    setIsDirty(false);
+    setSaveError(null);
+    setSaveStatus('saved');
+    setIsEditing(false);
+    setTimeout(() => setSaveStatus('idle'), 2500);
+    setIsVisible(false);
+    setTimeout(onClose, 300);
+
+    // 真正的数据保存全部在后台由 Store 处理（乐观更新）
+    const doSave = async () => {
+      if (onUpdateTask) {
+        onUpdateTask({
+          ...currentTask,
+          title: draft.title,
+          company: draft.company,
+          date: draft.date,
+          time: draft.time,
+          tag: draft.tag,
+          round: draft.round || undefined,
+          meetingLink: draft.meetingLink || undefined,
+          resumeFilename: draft.resumeFilename || undefined,
+          notes: draft.notes || undefined,
+        });
+      } else if (currentTask.id.startsWith('new-')) {
+        const result = await createTaskAction({
+          title: draft.title,
+          company: draft.company,
+          taskDate: draft.date,
+          taskTime: draft.time,
+          tag: draft.tag,
+          round: draft.round || undefined,
+          meetingLink: draft.meetingLink || undefined,
+          resumeFilename: draft.resumeFilename || undefined,
+          notes: draft.notes || undefined,
+        });
+        if (!result) {
+          setSaveError('保存失败，请重试');
+        }
+      } else {
+        const result = await updateTaskAction(currentTask.id, {
+          title: draft.title,
+          company: draft.company,
+          taskDate: draft.date,
+          taskTime: draft.time || null,
+          tag: draft.tag,
+          round: draft.round || null,
+          meetingLink: draft.meetingLink || null,
+          resumeFilename: draft.resumeFilename || null,
+          notes: draft.notes || null,
+        });
+        if (!result) {
+          setSaveError('保存失败，请重试');
+        }
+      }
+    };
+
+    doSave(); // fire-and-forget
   };
 
   // 如果没有选中任务，不渲染抽屉
@@ -180,18 +200,18 @@ export default function TaskDetails({ taskId, task: directTask, onClose, onUpdat
               )}
             </div>
 
-            {/* Save status indicator */}
-            <div className="flex items-center gap-2 flex-shrink-0 min-w-[100px] justify-end">
-              {saveStatus === 'saving' && (
-                <span className="flex items-center gap-1 text-xs text-gray-400 font-medium">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  保存中
-                </span>
-              )}
+            {/* Save status / error indicator */}
+            <div className="flex items-center gap-2 flex-shrink-0 min-w-[120px] justify-end">
               {saveStatus === 'saved' && (
                 <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
                   <Check className="w-3 h-3" />
                   已保存
+                </span>
+              )}
+              {saveError && (
+                <span className="flex items-center gap-1 text-xs text-red-500 font-medium">
+                  <X className="w-3 h-3" />
+                  {saveError}
                 </span>
               )}
             </div>
@@ -307,13 +327,29 @@ export default function TaskDetails({ taskId, task: directTask, onClose, onUpdat
             <div>
               <FieldLabel>具体时间</FieldLabel>
               {isEditing ? (
-                <input
-                  type="time"
-                  value={draft.time}
-                  onChange={(e) => { setDraft((p) => ({ ...p, time: e.target.value })); setIsDirty(true); }}
-                  className="w-full text-sm text-gray-800 bg-white border border-gray-200 shadow-sm rounded-md
-                    focus:outline-none focus:border-gray-400 focus:ring-0 px-3 py-2 transition-colors"
-                />
+                <div>
+                  <input
+                    type="time"
+                    value={draft.time}
+                    onChange={(e) => {
+                      setDraft((p) => ({ ...p, time: e.target.value }));
+                      setIsDirty(true);
+                      if (e.target.value) setTimeError(false);
+                    }}
+                    className={`w-full text-sm text-gray-800 bg-white border shadow-sm rounded-md
+                      focus:outline-none focus:ring-0 px-3 py-2 transition-colors
+                      ${timeError
+                        ? 'border-red-400 focus:border-red-500'
+                        : 'border-gray-200 focus:border-gray-400'
+                      }`}
+                  />
+                  {timeError && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <span className="inline-block w-1 h-1 bg-red-400 rounded-full" />
+                      请填写时间
+                    </p>
+                  )}
+                </div>
               ) : (
                 <p className="text-sm text-gray-700 font-medium">
                   {draft.time || <span className="text-[#999999] italic">未设置</span>}

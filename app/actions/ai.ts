@@ -291,12 +291,18 @@ export async function sendMessage(
     // ── 3. 获取历史消息（用于上下文）─────────────────────────────────────
     const { data: historyRows } = await supabase
       .from('ai_messages')
-      .select('role, content')
+      .select('role, content, attachments')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
       .limit(20);
 
-    const history = historyRows ?? [];
+    // 过滤出有实际内容的消息（文字或图片附件）
+    const history = (historyRows ?? []).filter((m) => {
+      const hasContent = m.content && m.content.trim().length > 0;
+      const attachments = typeof m.attachments === 'string' ? JSON.parse(m.attachments) : (m.attachments ?? []);
+      const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+      return hasContent || hasAttachments;
+    });
 
     // ── 4. 构建 LLM 请求 ─────────────────────────────────────────────────
     const client = createLLMClient();
@@ -305,22 +311,57 @@ export async function sendMessage(
     const systemPrompt = buildSystemPrompt(mode, user.id);
 
     // 构造 OpenAI 兼容的消息格式
+    // 情况1：只有图片没有文字
+    // 情况2：只有文字没有图片
+    // 情况3：两者都有
+    type ContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } };
+    let userMessageContent: string | ContentPart[];
+
+    if (content.trim() && attachments.length > 0) {
+      // 两者都有
+      userMessageContent = [
+        ...attachments.map((a) => ({
+          type: 'image_url' as const,
+          image_url: { url: a.url },
+        })),
+        { type: 'text' as const, text: content },
+      ];
+    } else if (attachments.length > 0) {
+      // 只有图片
+      userMessageContent = attachments.map((a) => ({
+        type: 'image_url' as const,
+        image_url: { url: a.url },
+      }));
+    } else {
+      // 只有文字
+      userMessageContent = content;
+    }
+
+    // 过滤掉空内容的历史消息，确保没有空消息
+    const validHistory = history.filter((m) => m.content && m.content.trim().length > 0);
+
+    const historyMessages = validHistory.map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content as string,
+    }));
+
+    const currentMessage: import('openai/resources/chat/completions').ChatCompletionMessageParam = {
+      role: 'user',
+      content: userMessageContent,
+    };
+
+    // 调试日志
+    console.log('[sendMessage] Building messages:', {
+      systemPromptLength: systemPrompt.length,
+      historyCount: historyMessages.length,
+      userMessageType: Array.isArray(userMessageContent) ? 'array' : 'string',
+      userMessageLength: Array.isArray(userMessageContent) ? userMessageContent.length : userMessageContent.length,
+    });
+
     const openaiMessages: import('openai/resources/chat/completions').ChatCompletionMessageParam[] = [
       { role: 'system', content: systemPrompt },
-      ...history.map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
-      {
-        role: 'user',
-        content: [
-          ...attachments.map((a) => ({
-            type: 'image_url' as const,
-            image_url: { url: a.url },
-          })),
-          { type: 'text' as const, text: content },
-        ],
-      },
+      ...historyMessages,
+      currentMessage,
     ];
 
     // ── 5. 调用 LLM ─────────────────────────────────────────────────────
@@ -410,4 +451,91 @@ export async function getWelcomeMessage(
   mode: AIMode = 'chat'
 ): Promise<string> {
   return getModeHint(mode);
+}
+
+/**
+ * 为对话生成智能标题
+ *
+ * 使用 LLM 根据用户首条消息生成简短的概括性标题。
+ * 如果生成失败，返回用户输入的前10个字符作为兜底。
+ */
+export async function generateConversationTitle(
+  conversationId: string,
+  userMessage: string
+): Promise<{ title?: string; error?: string }> {
+  try {
+    const supabase = await createServerSupabaseClient();
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
+    // 兜底：取用户输入前10个字
+    const fallbackTitle = userMessage.slice(0, 10);
+
+    // 如果消息太短，直接用兜底
+    if (userMessage.trim().length < 5) {
+      const { error: updateError } = await supabase
+        .from('ai_conversations')
+        .update({ title: fallbackTitle })
+        .eq('id', conversationId)
+        .eq('user_id', user.id);
+
+      if (updateError) return { error: updateError.message };
+      return { title: fallbackTitle };
+    }
+
+    // 调用 LLM 生成标题
+    const client = createLLMClient();
+    const model = getLLMModel();
+
+    const titlePrompt = `根据用户的对话内容，生成一个简短的中文标题（最多15个字，必须在10-15字之间）。
+
+要求：
+- 直接输出标题，不要任何解释或引号
+- 标题应该概括用户的主要意图或话题
+- 要简洁、有信息量
+
+用户消息：${userMessage.slice(0, 200)}`;
+
+    let generatedTitle = fallbackTitle;
+
+    try {
+      const response = await client.chat.completions.create({
+        model,
+        messages: [{ role: 'user', content: titlePrompt }],
+        temperature: 0.3,
+        max_tokens: 20,
+      });
+
+      const rawTitle = response.choices[0]?.message?.content?.trim() ?? '';
+
+      // 清理标题：移除引号、换行等
+      generatedTitle = rawTitle.replace(/^["'""''「」【】『』]/g, '').trim().slice(0, 15);
+
+      // 确保标题不为空
+      if (!generatedTitle) {
+        generatedTitle = fallbackTitle;
+      }
+    } catch (llmError) {
+      console.warn('[generateConversationTitle] LLM call failed, using fallback:', llmError);
+      generatedTitle = fallbackTitle;
+    }
+
+    // 更新数据库中的标题
+    const { error: updateError } = await supabase
+      .from('ai_conversations')
+      .update({ title: generatedTitle, updated_at: new Date().toISOString() })
+      .eq('id', conversationId)
+      .eq('user_id', user.id);
+
+    if (updateError) {
+      console.error('[generateConversationTitle] Failed to update title:', updateError);
+      return { error: updateError.message };
+    }
+
+    return { title: generatedTitle };
+  } catch (err) {
+    console.error('[generateConversationTitle] Unexpected error:', err);
+    return { error: '生成标题失败' };
+  }
 }

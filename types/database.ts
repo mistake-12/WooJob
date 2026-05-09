@@ -34,6 +34,7 @@ export interface DbJob {
   description: string | null;
   notes: string | null;
   progress: number;
+  position: number;  // 卡片在同列中的排序位置
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
@@ -90,6 +91,7 @@ export interface JobWithTags {
   description: string | null;
   notes: string | null;
   progress: number;
+  position: number;  // 卡片在同列中的排序位置
   createdAt: string;
   updatedAt: string;
   tags: JobTags;

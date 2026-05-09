@@ -20,6 +20,7 @@ export interface Job {
     interviewTime?: string;
   };
   progress: number;
+  position: number;  // 卡片在同列中的排序位置
   description?: string;
   notes?: string;
   website?: string;

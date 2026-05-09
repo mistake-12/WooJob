@@ -1,10 +1,58 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Task } from '@/types';
 import { useJobStore } from '@/store/useJobStore';
 import TaskDetails from './TaskDetails';
 import { Plus } from 'lucide-react';
+
+/** 计算智能默认历史月：每月 1-9 日显示上月，10 日及以后显示当月（始终有内容可看） */
+function getSmartDefaultMonth(): string {
+  const now = new Date();
+  const day = now.getDate();
+  if (day <= 9) {
+    // 切到上月
+    const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** 获取上一个月（用于切换器） */
+function getPrevMonth(month: string): string {
+  const [year, monthNum] = month.split('-').map(Number);
+  const d = new Date(year, monthNum - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** 获取下一个月（用于切换器，不能超过当月） */
+function getNextMonth(month: string): string {
+  const [year, monthNum] = month.split('-').map(Number);
+  const d = new Date(year, monthNum, 1);
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  if (month >= currentMonth) return month; // 不超过当月
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** 检查月份是否超过当前月份（用于禁用"下一个月"按钮） */
+function isFutureMonth(month: string): boolean {
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  return month > currentMonth;
+}
+
+/** 获取"YYYY年 M月"格式 */
+function formatMonthLabel(month: string): string {
+  const [year, m] = month.split('-').map(Number);
+  return `${year}年${m}月`;
+}
+
+/** 将月份字符串转为日历标题用的小数格式 "2026年 5月" */
+function formatMonthShort(month: string): string {
+  const [year, m] = month.split('-').map(Number);
+  return `${year}年 ${m}月`;
+}
 
 interface AgendaViewProps {}
 
@@ -36,10 +84,9 @@ function parseDateLabelToDate(label: string): Date {
 }
 
 /**
- * 将任务列表按日期分组，并按时间顺序排序。
- * 所有相对日期（"今天"、"明天"）和绝对日期（"4月20日"）都规范化为
- * 统一的 "YYYY-MM-DD" 格式后再分组，确保同一天的任务不会因写法不同而被拆分。
- * 支持任意日期，不再依赖硬编码白名单。
+ * 将任务列表按日期分组，每日内按时间正序排列。
+ * 所有日期都规范化为 "YYYY-MM-DD" 格式后再分组。
+ * 注意：此函数不负责今天/过去的时间线排序，排序逻辑在渲染层处理。
  */
 function groupTasksByDate(tasks: Task[]): AgendaSection[] {
   if (tasks.length === 0) return [];
@@ -55,7 +102,6 @@ function groupTasksByDate(tasks: Task[]): AgendaSection[] {
   const sections: AgendaSection[] = [];
   for (const [date, dateTasks] of grouped) {
     const sorted = dateTasks.sort((a, b) => {
-      // 截取 HH:mm 用于比较（去掉秒）
       const timeA = a.time ? `1970-01-01T${a.time.slice(0, 5)}:00` : '1970-01-01T23:59:59';
       const timeB = b.time ? `1970-01-01T${b.time.slice(0, 5)}:00` : '1970-01-01T23:59:59';
       return timeA.localeCompare(timeB);
@@ -63,7 +109,6 @@ function groupTasksByDate(tasks: Task[]): AgendaSection[] {
     sections.push({ date, tasks: sorted });
   }
 
-  sections.sort((a, b) => a.date.localeCompare(b.date));
   return sections;
 }
 
@@ -306,13 +351,10 @@ function getMonthGrid(year: number, month: number) {
 }
 
 /** 将日历数字 day 映射为 ISO 格式的 date 字符串，用于匹配任务和筛选 */
-function dayToDateLabel(day: number | null): string | null {
+function dayToDateLabel(day: number | null, calYear: number, calMonth: number): string | null {
   if (day === null) return null;
-  if (day === TODAY.getDate()) return formatDateToISO(TODAY);
-  const tomorrow = new Date(TODAY);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  if (day === tomorrow.getDate()) return formatDateToISO(tomorrow);
-  return formatDateToISO(new Date(TODAY.getFullYear(), TODAY.getMonth(), day));
+  const calToday = new Date(calYear, calMonth, day);
+  return formatDateToISO(calToday);
 }
 
   const tagColors: Record<string, string> = {
@@ -326,6 +368,7 @@ export default function AgendaView({}: AgendaViewProps) {
   const tasks = useJobStore((s) => s.tasks);
   const updateTask = useJobStore((s) => s.updateTask);
   const createTask = useJobStore((s) => s.createTask);
+  const fetchTasks = useJobStore((s) => s.fetchTasks);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
   /** 当前筛选条件：日期筛选 | 标签筛选 | 无筛选（全不选） */
@@ -337,10 +380,51 @@ export default function AgendaView({}: AgendaViewProps) {
     value: string;
   } | null>(null);
 
+  /** 历史月份（默认智能月：每月1-9日=上月，10日后=当月） */
+  const [historyMonth, setHistoryMonth] = useState(() => getSmartDefaultMonth());
+  /** 历史区是否展开 */
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  /** 记录哪些月份已加载（当月由 page.tsx 加载，这里只管历史月） */
+  const [loadedMonths, setLoadedMonths] = useState<Set<string>>(() => {
+    const current = new Date().toISOString().slice(0, 7);
+    return new Set([current]);
+  });
+
+  /** 切月时加载历史月份（loadedMonths 去重）；当月任务由 page.tsx 初始化时已加载） */
+  useEffect(() => {
+    if (!loadedMonths.has(historyMonth)) {
+      fetchTasks(historyMonth);
+      setLoadedMonths((prev) => new Set([...prev, historyMonth]));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyMonth]);
+
   const year = TODAY.getFullYear();
   const month = TODAY.getMonth();
   const day = TODAY.getDate();
-  const grid = getMonthGrid(year, month);
+
+  // ── 日历导航月份（可切换，与 TODAY 解耦）───────────────────────
+  const [calendarYear, setCalendarYear] = useState(year);
+  const [calendarMonth, setCalendarMonth] = useState(month);
+  const grid = getMonthGrid(calendarYear, calendarMonth);
+
+  // ── 日历月份切换 ─────────────────────────────────────────────
+  function navigateCalendarMonth(delta: -1 | 1) {
+    let newMonth = calendarMonth + delta;
+    let newYear = calendarYear;
+    if (newMonth < 0) {
+      newMonth = 11;
+      newYear -= 1;
+    } else if (newMonth > 11) {
+      newMonth = 0;
+      newYear += 1;
+    }
+    setCalendarMonth(newMonth);
+    setCalendarYear(newYear);
+  }
+
+  const isCalendarCurrentMonth =
+    calendarYear === year && calendarMonth === month;
 
   // ── 提取全局所有任务日期（小圆点 & 筛选用），统一转为 ISO 格式 ─
   const allTaskDates = new Set(tasks.map((t) => normalizeDateLabel(t.date)));
@@ -352,6 +436,19 @@ export default function AgendaView({}: AgendaViewProps) {
       : tasks.filter((t) => t.tag === selectedFilter.value)
     : tasks;
   const sections = groupTasksByDate(filteredTasks);
+
+  // ── 分割今天+未来 vs 历史 ────────────────────────────────────
+  const todayISO = formatDateToISO(TODAY);
+  const upcomingSections = sections
+    .filter((s) => s.date >= todayISO)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const pastSections = sections
+    .filter((s) => s.date < todayISO)
+    .sort((a, b) => b.date.localeCompare(a.date)); // 过去：最近的在最前
+
+  // ── 历史区只显示当前 historyMonth 的数据 ─────────────────────
+  const historyMonthSections = pastSections.filter((s) => s.date.slice(0, 7) === historyMonth);
+  const pastTaskCount = pastSections.reduce((sum, s) => sum + s.tasks.length, 0);
 
   // ── 动态计算筛选数量 ───────────────────────────────────────
   const interviewCount = tasks.filter((t) => t.tag === '面试' && !t.isCompleted).length;
@@ -373,9 +470,31 @@ export default function AgendaView({}: AgendaViewProps) {
 
         {/* 迷你日历 */}
         <div>
-          <p className="text-xs font-bold text-[#666666] uppercase tracking-widest mb-4">
-            {year}年 {month + 1}月
-          </p>
+          {/* 带月份切换的标题行 */}
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-xs font-bold text-[#666666] uppercase tracking-widest">
+              {calendarYear}年 {calendarMonth + 1}月
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => navigateCalendarMonth(-1)}
+                className="w-6 h-6 rounded flex items-center justify-center text-[#999] hover:text-gray-700 hover:bg-black/5 transition-colors cursor-pointer"
+              >
+                <svg className="w-3 h-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M10 4l-4 4 4 4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <button
+                onClick={() => navigateCalendarMonth(1)}
+                className="w-6 h-6 rounded flex items-center justify-center text-[#999] hover:text-gray-700 hover:bg-black/5 transition-colors cursor-pointer disabled:opacity-30"
+                disabled={isCalendarCurrentMonth}
+              >
+                <svg className="w-3 h-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          </div>
           {/* 星期头 */}
           <div className="grid grid-cols-7 gap-0 mb-1">
             {WEEKDAYS.map((w) => (
@@ -384,13 +503,14 @@ export default function AgendaView({}: AgendaViewProps) {
               </div>
             ))}
           </div>
-          {/* 日期格 */}
+          {/* 日期格（使用导航月份） */}
           <div className="grid grid-cols-7 gap-0">
             {grid.map((d, i) => {
-              const dateLabel = dayToDateLabel(d);
+              const dateLabel = dayToDateLabel(d, calendarYear, calendarMonth);
               const hasTask = dateLabel !== null && allTaskDates.has(dateLabel);
               const isSelected = dateLabel !== null && selectedFilter?.type === 'date' && selectedFilter.value === dateLabel;
-              const isToday = d === day;
+              const isToday =
+                calendarYear === year && calendarMonth === month && d === day;
 
               return (
                 <div key={i} className="relative aspect-square flex items-center justify-center">
@@ -481,6 +601,57 @@ export default function AgendaView({}: AgendaViewProps) {
             })}
           </div>
         </div>
+
+          {/* 历史月份切换器（展开后始终可见上下月按钮） */}
+          <button
+            onClick={() => setHistoryExpanded((v) => !v)}
+            className="w-full flex items-center justify-between py-2.5 px-3 rounded-md text-sm transition-colors
+              text-gray-500 hover:bg-black/4 hover:text-gray-800"
+          >
+            <div className="flex items-center gap-2">
+              <svg
+                className={`w-3.5 h-3.5 text-[#999999] transition-transform ${historyExpanded ? 'rotate-90' : ''}`}
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              >
+                <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span>{formatMonthLabel(historyMonth)}</span>
+            </div>
+            {pastTaskCount > 0 && (
+              <span className="text-xs text-[#999999]">{pastTaskCount}条</span>
+            )}
+          </button>
+
+          {/* 月份切换（展开后显示上下月按钮） */}
+          {historyExpanded && (
+            <div className="mt-2 ml-4 flex items-center gap-2">
+              <button
+                onClick={() => setHistoryMonth(getPrevMonth(historyMonth))}
+                className="flex items-center gap-1 py-1.5 px-3 rounded-md text-xs text-gray-500 hover:bg-black/4 hover:text-gray-800 transition-colors cursor-pointer"
+              >
+                <svg className="w-3 h-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M10 4l-4 4 4 4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                上月
+              </button>
+              <span className="text-[10px] text-[#CCCCCC] min-w-[60px] text-center">
+                {formatMonthLabel(historyMonth)}
+              </span>
+              <button
+                onClick={() => setHistoryMonth(getNextMonth(historyMonth))}
+                disabled={isFutureMonth(historyMonth)}
+                className="flex items-center gap-1 py-1.5 px-3 rounded-md text-xs text-gray-500 hover:bg-black/4 hover:text-gray-800 transition-colors disabled:opacity-30 cursor-pointer"
+              >
+                下月
+                <svg className="w-3 h-3" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          )}
       </aside>
 
       {/* ── 右侧主列表 ───────────────────────────── */}
@@ -570,23 +741,94 @@ export default function AgendaView({}: AgendaViewProps) {
                 新建待办事项
               </button>
             </div>
+          ) : selectedFilter?.type === 'tag' || selectedFilter?.type === 'date' ? (
+            // ── 有筛选时：显示全部匹配任务（不过滤历史）──────────────
+            <>
+              {sections.map((section) => (
+                <section key={section.date} className="mb-10 last:mb-0">
+                  {selectedFilter?.type !== 'date' && (
+                    <h3 className="text-xl font-bold text-gray-900 mt-8 mb-4 leading-none">
+                      {formatDateHeader(section.date)}
+                    </h3>
+                  )}
+                  <div className="space-y-3">
+                    {section.tasks.map((task) => (
+                      <TaskCard key={task.id} task={task} onOpen={setSelectedTask} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </>
           ) : (
-            sections.map((section) => (
-              <section key={section.date} className="mb-10 last:mb-0">
-                {/* 日期分组标题 — 精确单日视图（date 筛选）时不显示；其余情况均显示 */}
-                {selectedFilter?.type !== 'date' && (
+            // ── 无筛选时：今天+未来优先，历史折叠 ─────────────────
+            <>
+              {/* 今天及未来的任务（始终展示） */}
+              {upcomingSections.map((section) => (
+                <section key={section.date} className="mb-10 last:mb-0">
                   <h3 className="text-xl font-bold text-gray-900 mt-8 mb-4 leading-none">
                     {formatDateHeader(section.date)}
                   </h3>
-                )}
-                {/* 任务卡片列表 */}
-                <div className="space-y-3">
-                  {section.tasks.map((task) => (
-                    <TaskCard key={task.id} task={task} onOpen={setSelectedTask} />
-                  ))}
+                  <div className="space-y-3">
+                    {section.tasks.map((task) => (
+                      <TaskCard key={task.id} task={task} onOpen={setSelectedTask} />
+                    ))}
+                  </div>
+                </section>
+              ))}
+
+              {/* 历史任务折叠区 */}
+              {pastTaskCount > 0 && (
+                <div className="mt-8">
+                  {/* 展开/收起按钮 */}
+                  <button
+                    onClick={() => setHistoryExpanded((v) => !v)}
+                    className="w-full flex items-center justify-between py-3 px-4 rounded-lg
+                      bg-[#F5F2EE] hover:bg-[#EBE8E1] border border-[#E0DCD1]
+                      text-sm text-[#8B735B] font-medium transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <svg
+                        className={`w-3.5 h-3.5 transition-transform ${historyExpanded ? 'rotate-90' : ''}`}
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                      >
+                        <path d="M6 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <span>历史任务</span>
+                    </div>
+                    <span className="text-xs text-[#B8A898]">
+                      {formatMonthLabel(historyMonth)} · {historyMonthSections.reduce((sum, s) => sum + s.tasks.length, 0)} 条
+                    </span>
+                  </button>
+
+                  {/* 历史任务列表（展开后显示，仅当前 historyMonth） */}
+                  {historyExpanded && (
+                    <div className="mt-3 opacity-60 space-y-3">
+                      {historyMonthSections.length === 0 ? (
+                        <p className="text-sm text-[#CCCCCC] text-center py-4">
+                          {formatMonthLabel(historyMonth)} 暂无任务
+                        </p>
+                      ) : (
+                        historyMonthSections.map((section) => (
+                          <section key={section.date} className="mb-8 last:mb-0">
+                            <h3 className="text-lg font-bold text-gray-400 mb-3 leading-none">
+                              {formatDateHeader(section.date)}
+                            </h3>
+                            <div className="space-y-3">
+                              {section.tasks.map((task) => (
+                                <TaskCard key={task.id} task={task} onOpen={setSelectedTask} />
+                              ))}
+                            </div>
+                          </section>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
-              </section>
-            ))
+              )}
+            </>
           )}
         </div>
       </main>

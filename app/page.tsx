@@ -22,6 +22,7 @@ export default function Home() {
   const jobs = useJobStore((s) => s.jobs);
   const trashedJobs = useJobStore((s) => s.trashedJobs);
   const updateJobStage = useJobStore((s) => s.updateJobStage);
+  const reorderJobs = useJobStore((s) => s.reorderJobs);
   const createJob = useJobStore((s) => s.createJob);
   const updateJob = useJobStore((s) => s.updateJob);
   const trashJob = useJobStore((s) => s.trashJob);
@@ -104,15 +105,18 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isProfileMenuOpen]);
 
-  // 初始化：加载数据
+  // 初始化：加载数据（Jobs/Trash/Tasks 全在这里统一加载，避免视图切换时竞态）
   useEffect(() => {
     fetchJobs();
     fetchTrashedJobs();
     fetchTasks();
   }, [fetchJobs, fetchTrashedJobs, fetchTasks]);
 
+  // 按 stage 分组，每组内按 position 排序
   const jobsByStage = stages.reduce((acc, stage) => {
-    acc[stage] = jobs.filter((job) => job.stage === stage);
+    acc[stage] = jobs
+      .filter((job) => job.stage === stage)
+      .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
     return acc;
   }, {} as Record<JobStage, typeof jobs>);
 
@@ -139,8 +143,14 @@ export default function Home() {
       });
     }
 
-    const newStage = destination.droppableId as JobStage;
-    updateJobStage(draggableId, newStage);
+    // 调用 reorderJobs 处理同列排序和跨列移动
+    reorderJobs(
+      draggableId,
+      source.droppableId as JobStage,
+      destination.droppableId as JobStage,
+      source.index,
+      destination.index
+    );
   }
 
   function handleOpenJob(job: { id: string }) {

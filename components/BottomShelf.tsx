@@ -73,7 +73,9 @@ function TaskCard({ task, onClick }: TaskCardProps) {
       {/* 时间 */}
       <div className="min-w-[48px] text-right">
         <div className="flex flex-col items-end">
-          <span className="text-base font-bold text-[#8B735B]">{task.time}</span>
+          <span className="text-base font-bold text-[#8B735B]">
+            {task.time ? task.time.slice(0, 5) : ''}
+          </span>
           {dateLabel !== '今天' && (
             <span className="text-[10px] text-[#8B735B]/70">{dateLabel}</span>
           )}

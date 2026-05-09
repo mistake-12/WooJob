@@ -110,15 +110,19 @@ export async function updateTask(
   try {
     const supabase = await getSupabase();
 
-    // 1. 检查是否存在
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
+    // 1. 检查是否存在且属于当前用户
     const { data: existing, error: fetchError } = await supabase
       .from('tasks')
       .select('*')
       .eq('id', id)
+      .eq('user_id', user.id)
       .single();
 
     if (fetchError || !existing) {
-      console.log('[updateTask] Task not found:', id);
+      console.log('[updateTask] Task not found or not owned:', id);
       return { error: fetchError?.message ?? 'Task not found' };
     }
 
@@ -144,6 +148,7 @@ export async function updateTask(
       .from('tasks')
       .update(updateFields)
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
 
@@ -172,15 +177,19 @@ export async function toggleTaskCompletion(
   try {
     const supabase = await getSupabase();
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
     // 1. 查当前状态
     const { data: current, error: fetchError } = await supabase
       .from('tasks')
       .select('is_completed')
       .eq('id', id)
+      .eq('user_id', user.id)
       .single();
 
     if (fetchError || !current) {
-      console.log('[toggleTaskCompletion] Task not found:', id);
+      console.log('[toggleTaskCompletion] Task not found or not owned:', id);
       return { error: fetchError?.message ?? 'Task not found' };
     }
 
@@ -189,6 +198,7 @@ export async function toggleTaskCompletion(
       .from('tasks')
       .update({ is_completed: !current.is_completed })
       .eq('id', id)
+      .eq('user_id', user.id)
       .select()
       .single();
 
