@@ -289,7 +289,14 @@ export const useJobStore = create<JobStore>((set, get) => ({
     if (!existing) return null;
 
     // Step 1: 立刻更新 UI（乐观更新）
-    const optimisticJob: Job = { ...existing, ...input, id };
+    // UpdateJobInput 的 deadline/keyTime 为 string|null，需映射为 Job 的 string
+    const optimisticJob: Job = {
+      ...existing,
+      ...input,
+      id,
+      deadline: input.deadline != null ? input.deadline : existing.deadline,
+      time: input.keyTime != null ? input.keyTime : existing.time,
+    };
     set((s) => ({
       jobs: s.jobs.map((j) => (j.id === id ? optimisticJob : j)),
     }));
