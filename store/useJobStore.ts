@@ -289,14 +289,16 @@ export const useJobStore = create<JobStore>((set, get) => ({
     if (!existing) return null;
 
     // Step 1: 立刻更新 UI（乐观更新）
-    // UpdateJobInput 的 deadline/keyTime 为 string|null，tags 内部字段也可能为 null
-    // 需映射为 Job 接口的 string | undefined 类型
+    // UpdateJobInput 中多个字段为 string|null，需全部映射为 Job 的 string | undefined
     const optimisticJob: Job = {
       ...existing,
       ...input,
       id,
       deadline: input.deadline != null ? input.deadline : existing.deadline,
       time: input.keyTime != null ? input.keyTime : existing.time,
+      website: input.website != null ? input.website : existing.website,
+      description: input.description != null ? input.description : existing.description,
+      notes: input.notes != null ? input.notes : existing.notes,
       tags: {
         referral: input.tags?.referral ?? existing.tags.referral,
         round: input.tags?.round ?? existing.tags.round,
