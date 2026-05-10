@@ -44,6 +44,7 @@ export interface Task {
 }
 
 export interface ResumeInfo {
+  id: string;
+  url: string;
   filename: string;
-  lastEdited: string;
 }

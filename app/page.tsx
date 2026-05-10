@@ -337,13 +337,13 @@ export default function Home() {
 
         {/* 左侧内容区 + 右侧 AI 侧边栏 */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          <div className="flex-1 flex flex-col px-8 pb-8 overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden">
             {/* 中间内容容器：占满剩余高度 */}
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               {currentView === 'kanban' ? (
                 <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
                   <DragDropContext onDragEnd={onDragEnd}>
-                    <div className="flex gap-0 flex-1 min-h-0 overflow-x-auto overflow-y-hidden items-stretch">
+                    <div className="flex gap-0 flex-1 min-h-0 overflow-x-auto overflow-y-hidden items-stretch px-8 pt-0">
                       {stages.map((stage) => (
                         <KanbanColumn
                           key={stage}

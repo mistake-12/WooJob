@@ -171,6 +171,7 @@ export const mockTasks: Task[] = [
 ];
 
 export const mockResumeInfo: ResumeInfo = {
+  id: 'mock-1',
+  url: '#',
   filename: '产品经理_主简历_v4.pdf',
-  lastEdited: '2天前',
 };

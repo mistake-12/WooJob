@@ -14,9 +14,12 @@ import type { JobStage, TaskType } from './index';
 export interface DbProfile {
   id: string;
   email: string;
-  nickname: string | null;
-  target_role: string | null;
-  resume_url: string | null;
+  nickname?: string;
+  target_role?: string;
+  resume_url?: string;
+  resume_filename?: string;
+  /** 多简历存储，JSON 数组格式 */
+  resumes?: { url: string; filename: string; id: string }[];
   created_at?: string;
   updated_at?: string;
 }
@@ -210,8 +213,11 @@ export type ProfileActionResult =
 
 /** 更新 profile 输入 */
 export interface UpdateProfileInput {
-  nickname?: string | null;
-  target_role?: string | null;
+  nickname?: string;
+  target_role?: string;
+  resume_url?: string;
+  resume_filename?: string;
+  resumes?: { url: string; filename: string; id: string }[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
