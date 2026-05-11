@@ -14,7 +14,7 @@ import TaskDetails from '@/components/TaskDetails';
 import { Briefcase, Plus, Trash2, Github } from 'lucide-react';
 import TrashDrawer from '@/components/TrashDrawer';
 import { getProfile, updateProfile } from '@/app/actions/profile';
-import { signOutAction } from '@/app/actions/profile';
+import { signOutClient } from '@/app/actions/signOutClient';
 
 const stages: JobStage[] = ['待投递', '已投递', '笔试中', '面试中', 'Offer', '已结束'];
 
@@ -318,7 +318,7 @@ export default function Home() {
                     <button
                       onClick={() => {
                         setIsProfileMenuOpen(false);
-                        signOutAction();
+                        signOutClient();
                       }}
                       className="px-4 py-2 text-sm text-[#111111] hover:bg-[#E0DCD1] cursor-pointer flex items-center gap-2 text-left transition-colors"
                     >

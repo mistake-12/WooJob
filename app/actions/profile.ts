@@ -1,7 +1,6 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { redirect } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase-server';
 import type { DbProfile, UpdateProfileInput } from '@/types/database';
 
@@ -48,7 +47,7 @@ export async function getProfile(): Promise<{ profile?: DbProfile; error?: strin
  */
 export async function updateProfile(
   input: UpdateProfileInput
-): Promise<{ profile?: DbProfile; error?: string }> {
+): Promise<{ profile?: DbProfile; error: string }> {
   console.log('[updateProfile] Updating profile:', input);
 
   try {
@@ -100,7 +99,7 @@ export async function updateProfile(
  */
 export async function updateUserResume(
   newResume: { url: string; filename: string; id: string }
-): Promise<{ profile?: DbProfile; error?: string }> {
+): Promise<{ profile?: DbProfile; error: string }> {
   console.log('[updateUserResume] Saving resume:', newResume);
 
   try {
@@ -258,14 +257,4 @@ export async function fetchUserResumes(): Promise<{ resumes?: { url: string; fil
     console.error('[fetchUserResumes] Unexpected error:', err);
     return { error: '获取简历列表失败' };
   }
-}
-
-/**
- * 从 Storage 中删除指定文件
- */
-export async function signOutAction(): Promise<void> {
-  console.log('[signOutAction] Signing out...');
-  const supabase = await createServerSupabaseClient();
-  await supabase.auth.signOut();
-  redirect('/login');
 }

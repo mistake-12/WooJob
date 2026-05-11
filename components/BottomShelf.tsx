@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Task, TaskType, ResumeInfo } from '@/types';
 import { useJobStore } from '@/store/useJobStore';
 import { getNext24HoursTasks, isoToDateLabel } from '@/lib/dateUtils';
@@ -244,12 +244,10 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
         setResumes(dbResumes);
         localStorage.setItem('resume_info', JSON.stringify(dbResumes));
       } else {
-        const stored = localStorage.getItem('resume_info');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          const list = Array.isArray(parsed) ? parsed : parsed ? [parsed] : [];
-          setResumes(list);
-        }
+        // DB 为空时清理 localStorage，防止旧账号的简历残留导致数据串台
+        localStorage.removeItem('resume_info');
+        // localStorage 不再作为 fallback，避免新登录用户看到旧账号数据
+        setResumes([]);
       }
       setIsInitialized(true);
     })();
@@ -261,49 +259,12 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
     setTimeout(() => setToast(null), 3000);
   };
 
-  /** 带指数退避的重试上传，最多尝试 3 次 */
-  async function uploadWithRetry(
-    bucket: string,
-    path: string,
-    file: File,
-    retries = 3
-  ): Promise<{ publicUrl: string; storagePath: string }> {
-    const supabase = createBrowserSupabaseClient();
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt < retries; attempt++) {
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .upload(path, file, { cacheControl: '3600', upsert: false });
-
-      if (!error && data) {
-        const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
-        return { publicUrl: urlData.publicUrl, storagePath: path };
-      }
-
-      // 网络错误（Failed to fetch）是原生 Error 对象，Supabase 业务错误是 ApiError 对象
-      const message =
-        typeof error?.message === 'string'
-          ? error.message
-          : typeof (error as unknown as Error)?.message === 'string'
-            ? ((error as unknown as Error).message)
-            : '上传失败，请检查网络后重试';
-
-      lastError = new Error(message);
-
-      if (attempt < retries - 1) {
-        // 指数退避：500ms -> 1000ms -> 2000ms
-        const delay = 500 * Math.pow(2, attempt);
-        console.warn(`[upload] Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-    }
-
-    throw lastError ?? new Error('上传失败，请检查网络后重试');
-  }
-
-  // 用 useCallback 稳定 handleUpload 的引用，解决 stale closure 问题
-  const handleUpload = useCallback(async (file: File) => {
+  /**
+   * 核心上传函数（纯内部实现，不导出）
+   * 完整流程：PDF 校验 → 客户端直传 Supabase Storage → 保存 URL 到 DB
+   * 两个事件路径（点击上传 / 拖拽上传）统一调用此函数。
+   */
+  async function uploadResumeToSupabase(file: File): Promise<void> {
     if (!isInitialized) {
       showToast('页面加载中，请稍后再试', 'error');
       return;
@@ -324,45 +285,120 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
     const storagePath = `${crypto.randomUUID()}.pdf`;
 
     try {
-      // 重试上传，最多重试 3 次
-      const { publicUrl } = await uploadWithRetry('resumes', storagePath, file);
+      // Step 1: 客户端直传 Supabase Storage（不经过 Next.js Server）
+      let publicUrl = '';
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { data, error } = await supabase.storage
+          .from('resumes')
+          .upload(storagePath, file, { cacheControl: '3600', upsert: false });
 
+        if (!error && data) {
+          const { data: urlData } = supabase.storage.from('resumes').getPublicUrl(storagePath);
+          publicUrl = urlData.publicUrl;
+          break;
+        }
+
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt)));
+        } else {
+          showToast('上传失败，请检查网络后重试', 'error');
+          setIsUploading(false);
+          return;
+        }
+      }
+
+      // Step 2: 拿到 publicUrl 后，仅将字符串保存到 DB（Server Action）
       const newResume: ResumeInfo = {
         id: crypto.randomUUID(),
         url: publicUrl,
         filename: file.name,
       };
-
       const { error: dbError } = await updateUserResume(newResume);
 
       if (dbError) {
         console.error('[upload] DB error:', dbError);
+        // DB 保存失败时回滚已上传的 Storage 文件
         await supabase.storage.from('resumes').remove([storagePath]);
         showToast('保存失败，请重试', 'error');
+        setIsUploading(false);
         return;
       }
 
+      // Step 3: 重新拉取最新列表（包含刚写入的数据）并同步 UI + localStorage
       const { resumes: latestResumes } = await fetchUserResumes();
       const resolved = latestResumes ?? [];
       setResumes(resolved);
       localStorage.setItem('resume_info', JSON.stringify(resolved));
       showToast('简历上传成功', 'success');
     } catch (err) {
-      console.error('[upload] Failed after retries:', err);
+      console.error('[upload] Unexpected error:', err);
       showToast('上传失败，请重试', 'error');
     } finally {
       setIsUploading(false);
     }
-  }, [isInitialized]);
+  }
 
-  const handleFileSelected = useCallback((file: File | null | undefined) => {
-    if (!file) return;
-    handleUpload(file);
-    // 上传完成后主动清理 input，使同一文件可再次上传
+  /**
+   * 点击上传入口：从 <input type="file"> 提取文件并上传。
+   * fileInputRef.value 的清理在 onChange 事件中直接处理，
+   * 不依赖异步 handleUpload 的执行时序。
+   */
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    if (file) {
+      uploadResumeToSupabase(file);
+    }
+    // 上传完成后主动清理 input，使同一文件可再次触发 onChange
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  }, [handleUpload]);
+  }
+
+  /**
+   * 拖拽上传入口：从 dataTransfer 提取文件并上传。
+   * 拖拽路径的 PDF 类型校验在提取后直接走 uploadResumeToSupabase 的统一流程。
+   */
+  function handleResumeDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDraggingOver(false);
+
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (!file) return;
+
+    // 类型校验由 uploadResumeToSupabase 统一处理
+    uploadResumeToSupabase(file);
+  }
+
+  // 拖拽辅助函数（无副作用，仅视觉反馈）
+  function handleResumeDragEnter(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current += 1;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDraggingOver(true);
+    }
+  }
+
+  function handleResumeDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }
+
+  function handleResumeDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current -= 1;
+    if (dragCounterRef.current === 0) {
+      setIsDraggingOver(false);
+    }
+  }
 
   async function handleDelete(id: string) {
     if (!isInitialized) return;
@@ -407,50 +443,6 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
         window.open(resume.url, '_blank');
       });
   }
-
-  // ─── 拖拽事件处理器（基于 dragCounter 解决冒泡误触）──────────────────────
-  const handleResumeDragEnter = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounterRef.current += 1;
-    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-      setIsDraggingOver(true);
-    }
-  }, []);
-
-  const handleResumeDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // 显式设置 dropEffect，使浏览器显示"可放置"光标，也是某些场景接收 drop 事件的必要条件
-    if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = 'copy';
-    }
-  }, []);
-
-  const handleResumeDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounterRef.current -= 1;
-    // 仅当 counter 归零时才关闭遮罩，避免子元素冒泡导致误触
-    if (dragCounterRef.current === 0) {
-      setIsDraggingOver(false);
-    }
-  }, []);
-
-  const handleResumeDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounterRef.current = 0;
-    setIsDraggingOver(false);
-
-    // 严格检查文件存在且类型合法
-    const files = e.dataTransfer?.files;
-    if (!files || files.length === 0) return;
-    const file = files[0];
-    if (!file || file.type !== 'application/pdf') return;
-
-    handleUpload(file);
-  }, [handleUpload]);
 
   return (
     <>
@@ -552,7 +544,7 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
           accept="application/pdf"
           className="hidden"
           onChange={(e) => {
-            handleFileSelected(e.target.files?.[0]);
+            handleFileChange(e);
           }}
         />
       </div>

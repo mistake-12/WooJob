@@ -84,6 +84,10 @@ interface JobStore {
   /** 正在按月加载的月份，避免重复请求导致闪烁 */
   loadingMonth: string | null;
 
+  // ── Auth State ─────────────────────────────────────────────────────────
+  /** 调用 signOut 后需要清理所有本地状态，防止数据串台 */
+  resetStore: () => void;
+
   // ── Jobs Actions ────────────────────────────────────────────────────────
   fetchJobs: () => Promise<void>;
   createJob: (input: CreateJobInput) => Promise<Job | null>;
@@ -246,6 +250,30 @@ export const useJobStore = create<JobStore>((set, get) => ({
   isLoading: false,
   error: null,
   loadingMonth: null,
+
+  // ── Auth State ──────────────────────────────────────────────────────
+  resetStore: () => {
+    set({
+      jobs: [],
+      trashedJobs: [],
+      tasks: [],
+      stats: { totalJobs: 0, trashedCount: 0, successRate: '0%', status: '求职中' },
+      isLoading: false,
+      error: null,
+      loadingMonth: null,
+      // AI 状态全部重置，防止新用户看到旧用户的对话记录
+      aiConversations: [],
+      aiCurrentConversationId: null,
+      aiMessages: [],
+      aiIsLoading: false,
+      aiError: null,
+      aiMode: 'chat',
+      aiParsedData: null,
+      aiWelcomeMessage: '有什么求职问题可以随时问我！',
+    });
+    // 清除简历的 localStorage 缓存，防止新登录用户看到旧简历列表
+    localStorage.removeItem('resume_info');
+  },
 
   // ── AI 对话 State ──────────────────────────────────────────────────────
   aiConversations: [],
