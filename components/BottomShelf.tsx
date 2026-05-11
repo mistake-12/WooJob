@@ -302,8 +302,12 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
     throw lastError ?? new Error('上传失败，请检查网络后重试');
   }
 
-  async function handleUpload(file: File) {
-    if (!isInitialized) return;
+  // 用 useCallback 稳定 handleUpload 的引用，解决 stale closure 问题
+  const handleUpload = useCallback(async (file: File) => {
+    if (!isInitialized) {
+      showToast('页面加载中，请稍后再试', 'error');
+      return;
+    }
     if (file.type !== 'application/pdf') {
       showToast('仅支持 PDF 格式文件', 'error');
       return;
@@ -349,16 +353,16 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
     } finally {
       setIsUploading(false);
     }
-  }
+  }, [isInitialized]);
 
-  function handleFileSelected(file: File | null | undefined) {
+  const handleFileSelected = useCallback((file: File | null | undefined) => {
     if (!file) return;
     handleUpload(file);
     // 上传完成后主动清理 input，使同一文件可再次上传
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  }
+  }, [handleUpload]);
 
   async function handleDelete(id: string) {
     if (!isInitialized) return;
@@ -446,7 +450,7 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
     if (!file || file.type !== 'application/pdf') return;
 
     handleUpload(file);
-  }, []);
+  }, [handleUpload]);
 
   return (
     <>
