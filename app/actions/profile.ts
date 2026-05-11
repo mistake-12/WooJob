@@ -36,7 +36,7 @@ export async function getProfile(): Promise<{ profile?: DbProfile; error?: strin
     }
 
     console.log('[getProfile] Got profile:', profile?.nickname ?? '(none)');
-    return { profile: profile as DbProfile };
+    return { profile: profile as DbProfile, error: '' };
   } catch (err) {
     console.error('[getProfile] Unexpected error:', err);
     return { error: '获取用户信息失败' };
@@ -88,7 +88,7 @@ export async function updateProfile(
 
     revalidatePath('/');
     console.log('[updateProfile] Done, profile updated:', profile?.nickname);
-    return { profile: profile as DbProfile };
+    return { profile: profile as DbProfile, error: '' };
   } catch (err) {
     console.error('[updateProfile] Unexpected error:', err);
     return { error: '更新用户信息失败' };
@@ -149,7 +149,7 @@ export async function updateUserResume(
 
     revalidatePath('/');
     console.log('[updateUserResume] Done, total resumes:', updatedResumes.length);
-    return { profile: profile as DbProfile };
+    return { profile: profile as DbProfile, error: '' };
   } catch (err) {
     console.error('[updateUserResume] Unexpected error:', err);
     return { error: '保存简历信息失败' };
@@ -217,7 +217,7 @@ export async function deleteUserResume(
     }
 
     revalidatePath('/');
-    return { profile: profile as DbProfile };
+    return { profile: profile as DbProfile, error: '' };
   } catch (err) {
     console.error('[deleteUserResume] Unexpected error:', err);
     return { error: '删除简历失败' };

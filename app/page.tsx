@@ -75,8 +75,8 @@ export default function Home() {
     setIsSavingProfile(true);
     setProfileSaveMsg('');
     const result = await updateProfile({
-      nickname: profileNickname || null,
-      target_role: profileTargetRole || null,
+      nickname: profileNickname || undefined,
+      target_role: profileTargetRole || undefined,
     });
     setIsSavingProfile(false);
     if (result.error) {
