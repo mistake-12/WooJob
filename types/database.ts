@@ -207,10 +207,6 @@ export type StatsActionResult =
   | { stats: Stats }
   | { error: string };
 
-export type ProfileActionResult =
-  | { profile: DbProfile }
-  | { error: string };
-
 /** 更新 profile 输入 */
 export interface UpdateProfileInput {
   nickname?: string;

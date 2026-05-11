@@ -257,6 +257,39 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
     setTimeout(() => setToast(null), 3000);
   };
 
+  /** 带指数退避的重试上传，最多尝试 3 次 */
+  async function uploadWithRetry(
+    bucket: string,
+    path: string,
+    file: File,
+    retries = 3
+  ): Promise<{ publicUrl: string; storagePath: string }> {
+    const supabase = createBrowserSupabaseClient();
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < retries; attempt++) {
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .upload(path, file, { cacheControl: '3600', upsert: false });
+
+      if (!error && data) {
+        const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
+        return { publicUrl: urlData.publicUrl, storagePath: path };
+      }
+
+      lastError = new Error(error?.message ?? 'Unknown storage error');
+
+      if (attempt < retries - 1) {
+        // 指数退避：500ms -> 1000ms -> 2000ms
+        const delay = 500 * Math.pow(2, attempt);
+        console.warn(`[upload] Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    throw lastError ?? new Error('Upload failed after retries');
+  }
+
   async function handleUpload(file: File) {
     if (!isInitialized) return;
     if (file.type !== 'application/pdf') {
@@ -271,50 +304,36 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
     setIsUploading(true);
     setToast(null);
 
+    const supabase = createBrowserSupabaseClient();
+    const storagePath = `${crypto.randomUUID()}.pdf`;
+
     try {
-      const supabase = createBrowserSupabaseClient();
-      // 唯一路径，避免文件名冲突
-      const storagePath = `${crypto.randomUUID()}.pdf`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('resumes')
-        .upload(storagePath, file, { cacheControl: '3600', upsert: false });
-
-      if (uploadError) {
-        console.error('[upload] Storage error:', uploadError.message);
-        showToast('上传失败，请重试', 'error');
-        return;
-      }
-
-      const { data: urlData } = supabase.storage
-        .from('resumes')
-        .getPublicUrl(storagePath);
+      // 重试上传，最多重试 3 次
+      const { publicUrl } = await uploadWithRetry('resumes', storagePath, file);
 
       const newResume: ResumeInfo = {
         id: crypto.randomUUID(),
-        url: urlData.publicUrl,
+        url: publicUrl,
         filename: file.name,
       };
 
-      // 写入数据库（追加模式），后端自行拉取最新数组
       const { error: dbError } = await updateUserResume(newResume);
 
       if (dbError) {
         console.error('[upload] DB error:', dbError);
         await supabase.storage.from('resumes').remove([storagePath]);
-        showToast('上传失败，请重试', 'error');
+        showToast('保存失败，请重试', 'error');
         return;
       }
 
-      // 数据库写入成功后，以服务端最新数据为准更新 UI
       const { resumes: latestResumes } = await fetchUserResumes();
       const resolved = latestResumes ?? [];
       setResumes(resolved);
       localStorage.setItem('resume_info', JSON.stringify(resolved));
       showToast('简历上传成功', 'success');
     } catch (err) {
-      console.error('[upload] Unexpected error:', err);
-      showToast('上传异常，请重试', 'error');
+      console.error('[upload] Failed after retries:', err);
+      showToast('上传失败，请重试', 'error');
     } finally {
       setIsUploading(false);
     }
@@ -382,6 +401,12 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
   const handleResumeDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // relatedTarget 为 null 表示离开了浏览器窗口（如放置动作），此时关闭遮罩
+    if (!e.relatedTarget) {
+      setIsDragging(false);
+      return;
+    }
+    // 仅当鼠标移到了拖拽区域外部时才关闭遮罩
     if (resumeAreaRef.current && !resumeAreaRef.current.contains(e.relatedTarget as Node)) {
       setIsDragging(false);
     }
@@ -392,7 +417,9 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
     e.stopPropagation();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
-    if (file) handleUpload(file);
+    if (file) {
+      handleUpload(file);
+    }
   }, []);
 
   return (
@@ -405,8 +432,14 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
         />
       )}
 
-      {/* 外层：border 由父级控制 */}
-      <div className="border-t border-[#DCD9D1]">
+      {/* 外层：border 由父级控制，拖拽事件绑定在最外层以确保从桌面拖入也能响应 */}
+      <div
+        className="border-t border-[#DCD9D1]"
+        onDragEnter={handleResumeDragEnter}
+        onDragOver={handleResumeDragOver}
+        onDragLeave={handleResumeDragLeave}
+        onDrop={handleResumeDrop}
+      >
         {/* 上层：左右并排固定高度 */}
         <div className="flex flex-row w-full h-[200px] gap-8 px-8 py-4">
           {/* 左侧：未来24小时 */}

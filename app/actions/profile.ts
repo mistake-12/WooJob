@@ -263,21 +263,6 @@ export async function fetchUserResumes(): Promise<{ resumes?: { url: string; fil
 /**
  * 从 Storage 中删除指定文件
  */
-export async function deleteStorageFile(storagePath: string): Promise<{ error?: string }> {
-  try {
-    const supabase = await createServerSupabaseClient();
-    const { error } = await supabase.storage.from('resumes').remove([storagePath]);
-    if (error) {
-      console.error('[deleteStorageFile] Error:', error.message);
-      return { error: error.message };
-    }
-    return {};
-  } catch (err) {
-    console.error('[deleteStorageFile] Unexpected error:', err);
-    return { error: '删除文件失败' };
-  }
-}
-
 export async function signOutAction(): Promise<void> {
   console.log('[signOutAction] Signing out...');
   const supabase = await createServerSupabaseClient();

@@ -28,10 +28,10 @@ export default function KanbanColumn({ title, jobs, onOpenJob, onAddJob, onTrash
           <span className="text-sm font-medium text-gray-400">({count})</span>
           <button
             onClick={() => onAddJob(title)}
-            className="ml-auto opacity-40 hover:opacity-100 transition-opacity w-5 h-5 rounded bg-[#8E7E6E] hover:bg-[#7A6B5A] flex items-center justify-center shadow-sm"
+            className="w-6 h-6 rounded bg-[#E5E1DA] hover:bg-[#D8D4CE] flex items-center justify-center transition-colors"
             title={`添加至${title}`}
           >
-            <Plus className="w-3 h-3 text-white" />
+            <Plus className="w-3 h-3 text-[#8B735B]" />
           </button>
         </h2>
       </div>

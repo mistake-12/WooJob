@@ -328,15 +328,14 @@ export const useJobStore = create<JobStore>((set, get) => ({
   },
 
   updateJobStage: async (id, newStage) => {
-    const prev = get().jobs;
-    // 乐观更新
+    const prevJobs = get().jobs;
+    const prevTrashedJobs = get().trashedJobs;
     set((s) => ({
       jobs: s.jobs.map((j) => (j.id === id ? { ...j, stage: newStage as JobStage } : j)),
     }));
     const result = await jobsActions.updateJobStage(id, newStage);
     if (result.error) {
-      // 回滚
-      set({ jobs: prev });
+      set({ jobs: prevJobs, trashedJobs: prevTrashedJobs });
     }
   },
 
