@@ -8,16 +8,16 @@
 
 - [X] 前端开发，基础功能实现 √   4.19实现
 - 下一步计划
-- [ ] 搭建ai工作流
-- [ ] 后端搭建工作任务拆分
-- [ ] 初始化 Supabase 项目，运行 SQL 脚本建表
-- [ ] 配置 Supabase Auth（邮箱登录 + OAuth）
-- [ ] 创建 `lib/supabase.ts` 客户端
-- [ ] 创建 `app/actions/` 目录及 Server Actions
-- [ ] 创建 Zustand Store 替换 useState
-- [ ] 前端对接 Server Actions，完成联调
-- [ ] 配置 Vercel 环境变量
-- [ ] 上线部署
+- [X] 搭建ai工作流
+- [X] 后端搭建工作任务拆分
+- [X] 初始化 Supabase 项目，运行 SQL 脚本建表
+- [X] 配置 Supabase Auth（邮箱登录 + OAuth）
+- [X] 创建 `lib/supabase.ts` 客户端
+- [X] 创建 `app/actions/` 目录及 Server Actions
+- [X] 创建 Zustand Store 替换 useState
+- [X] 前端对接 Server Actions，完成联调
+- [X] 配置 Vercel 环境变量
+- [X] 上线部署
 - [ ] 个人求职简历知识图库？
 - [X] 求职成功礼花交互   √  4.22实现
 
