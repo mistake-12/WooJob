@@ -154,6 +154,21 @@ export async function getMessages(
   try {
     const supabase = await createServerSupabaseClient();
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
+    // 验证会话归属
+    const { data: conv, error: convError } = await supabase
+      .from('ai_conversations')
+      .select('id')
+      .eq('id', conversationId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (convError || !conv) {
+      return { error: '会话不存在或无权访问' };
+    }
+
     const { data, error } = await supabase
       .from('ai_messages')
       .select('*')
@@ -178,10 +193,14 @@ export async function deleteConversation(
   try {
     const supabase = await createServerSupabaseClient();
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { success: false, error: '未登录或会话已过期' };
+
     const { error } = await supabase
       .from('ai_conversations')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('user_id', user.id);
 
     if (error) return { success: false, error: error.message };
 
@@ -202,10 +221,14 @@ export async function renameConversation(
   try {
     const supabase = await createServerSupabaseClient();
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { success: false, error: '未登录或会话已过期' };
+
     const { error } = await supabase
       .from('ai_conversations')
       .update({ title, updated_at: new Date().toISOString() })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('user_id', user.id);
 
     if (error) return { success: false, error: error.message };
 
@@ -267,6 +290,18 @@ export async function sendMessage(
     // ── 认证 ──────────────────────────────────────────────────────────────
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: '未登录或会话已过期' };
+
+    // ── 验证会话归属 ────────────────────────────────────────────────────
+    const { data: conv, error: convError } = await supabase
+      .from('ai_conversations')
+      .select('id')
+      .eq('id', conversationId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (convError || !conv) {
+      return { error: '会话不存在或无权访问' };
+    }
 
     // ── 1. 保存用户消息 ──────────────────────────────────────────────────
     const { error: insertUserError } = await supabase.from('ai_messages').insert({

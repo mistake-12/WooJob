@@ -221,13 +221,17 @@ function TaskCard({ task, onClick }: TaskCardProps) {
 
 export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const resumeAreaRef = useRef<HTMLDivElement>(null);
   const tasks = useJobStore((s) => s.tasks);
   const next24HoursTasks = getNext24HoursTasks(tasks);
 
   const [isUploading, setIsUploading] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [resumes, setResumes] = useState<ResumeInfo[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  // dragCounter 替代单一 isDragging 标志，解决多层级元素的 dragLeave 冒泡误触问题
+  const dragCounterRef = useRef(0);
   // 保存 resumes 快照，避免 async 函数中闭包捕获旧值
   const resumesRef = useRef<ResumeInfo[]>([]);
   useEffect(() => { resumesRef.current = resumes; }, [resumes]);
@@ -277,7 +281,15 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
         return { publicUrl: urlData.publicUrl, storagePath: path };
       }
 
-      lastError = new Error(error?.message ?? 'Unknown storage error');
+      // 网络错误（Failed to fetch）是原生 Error 对象，Supabase 业务错误是 ApiError 对象
+      const message =
+        typeof error?.message === 'string'
+          ? error.message
+          : typeof (error as unknown as Error)?.message === 'string'
+            ? ((error as unknown as Error).message)
+            : '上传失败，请检查网络后重试';
+
+      lastError = new Error(message);
 
       if (attempt < retries - 1) {
         // 指数退避：500ms -> 1000ms -> 2000ms
@@ -287,7 +299,7 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
       }
     }
 
-    throw lastError ?? new Error('Upload failed after retries');
+    throw lastError ?? new Error('上传失败，请检查网络后重试');
   }
 
   async function handleUpload(file: File) {
@@ -339,6 +351,15 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
     }
   }
 
+  function handleFileSelected(file: File | null | undefined) {
+    if (!file) return;
+    handleUpload(file);
+    // 上传完成后主动清理 input，使同一文件可再次上传
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+
   async function handleDelete(id: string) {
     if (!isInitialized) return;
     const currentResumes = resumesRef.current;
@@ -383,43 +404,48 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
       });
   }
 
-  const resumeAreaRef = useRef<HTMLDivElement>(null);
-
+  // ─── 拖拽事件处理器（基于 dragCounter 解决冒泡误触）──────────────────────
   const handleResumeDragEnter = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    dragCounterRef.current += 1;
     if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-      setIsDragging(true);
+      setIsDraggingOver(true);
     }
   }, []);
 
   const handleResumeDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // 显式设置 dropEffect，使浏览器显示"可放置"光标，也是某些场景接收 drop 事件的必要条件
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
   }, []);
 
   const handleResumeDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // relatedTarget 为 null 表示离开了浏览器窗口（如放置动作），此时关闭遮罩
-    if (!e.relatedTarget) {
-      setIsDragging(false);
-      return;
-    }
-    // 仅当鼠标移到了拖拽区域外部时才关闭遮罩
-    if (resumeAreaRef.current && !resumeAreaRef.current.contains(e.relatedTarget as Node)) {
-      setIsDragging(false);
+    dragCounterRef.current -= 1;
+    // 仅当 counter 归零时才关闭遮罩，避免子元素冒泡导致误触
+    if (dragCounterRef.current === 0) {
+      setIsDraggingOver(false);
     }
   }, []);
 
   const handleResumeDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      handleUpload(file);
-    }
+    dragCounterRef.current = 0;
+    setIsDraggingOver(false);
+
+    // 严格检查文件存在且类型合法
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (!file || file.type !== 'application/pdf') return;
+
+    handleUpload(file);
   }, []);
 
   return (
@@ -485,7 +511,7 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
             onDrop={handleResumeDrop}
           >
             {/* AI 助手风格的拖拽遮罩 */}
-            {isDragging && (
+            {isDraggingOver && (
               <div className="absolute inset-0 z-50 bg-[#8B735B]/20 backdrop-blur-sm flex flex-col items-center justify-center gap-2 border-2 border-dashed border-[#8B735B] rounded-lg">
                 <div className="w-10 h-10 rounded-full bg-[#8B735B]/30 flex items-center justify-center">
                   <FileText className="w-5 h-5 text-[#8B735B]" />
@@ -522,9 +548,7 @@ export default function BottomShelf({ onTaskClick }: BottomShelfProps) {
           accept="application/pdf"
           className="hidden"
           onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) handleUpload(file);
-            e.target.value = '';
+            handleFileSelected(e.target.files?.[0]);
           }}
         />
       </div>

@@ -32,9 +32,13 @@ export async function getJobs(): Promise<{ jobs?: JobWithTags[]; error?: string 
   try {
     const supabase = await createServerSupabaseClient();
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
     const { data: jobs, error } = await supabase
       .from('jobs')
       .select('*')
+      .eq('user_id', user.id)
       .is('deleted_at', null)
       .order('position', { ascending: true });
 
@@ -131,16 +135,13 @@ export async function createJob(
     const supabase = await createServerSupabaseClient();
 
     // 获取当前用户 ID（RLS 依赖 user_id）
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
-      console.error('[createJob] Not authenticated');
-      return { error: '未登录或会话已过期' };
-    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
 
-    // 获取该阶段最大的 position，新卡片插入到末尾
     const { data: maxPosData } = await supabase
       .from('jobs')
       .select('position')
+      .eq('user_id', user.id)
       .eq('stage', input.stage ?? '待投递')
       .is('deleted_at', null)
       .order('position', { ascending: false })
@@ -392,9 +393,13 @@ export async function getTrashedJobs(): Promise<{ jobs?: JobWithTags[]; error?: 
   try {
     const supabase = await createServerSupabaseClient();
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
     const { data: jobs, error } = await supabase
       .from('jobs')
       .select('*')
+      .eq('user_id', user.id)
       .not('deleted_at', 'is', null)
       .order('deleted_at', { ascending: false });
 

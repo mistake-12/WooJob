@@ -12,19 +12,25 @@ export async function getStats(): Promise<{ stats?: Stats; error?: string }> {
   try {
     const supabase = await createServerSupabaseClient();
 
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
     const [activeResult, trashedResult, offerResult] = await Promise.all([
       supabase
         .from('jobs')
         .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
         .is('deleted_at', null)
         .neq('stage', '已结束'),
       supabase
         .from('jobs')
         .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
         .not('deleted_at', 'is', null),
       supabase
         .from('jobs')
         .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
         .is('deleted_at', null)
         .eq('stage', 'Offer'),
     ]);
