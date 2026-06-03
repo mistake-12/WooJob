@@ -487,9 +487,13 @@ export const useJobStore = create<JobStore>((set, get) => ({
           }))),
     ];
 
-    const result = await jobsActions.updateJobsOrder(updates);
-    if (result.error) {
-      console.error('[reorderJobs] Persist failed, UI may be stale:', result.error);
+    // 模板卡片 id 以 template- 开头，只存在于 store 不存在于 DB，跳过持久化
+    const realUpdates = updates.filter((u) => !u.id.startsWith('template-'));
+    if (realUpdates.length > 0) {
+      const result = await jobsActions.updateJobsOrder(realUpdates);
+      if (result.error) {
+        console.error('[reorderJobs] Persist failed, UI may be stale:', result.error);
+      }
     }
   },
 
