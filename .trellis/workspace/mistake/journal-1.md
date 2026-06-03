@@ -75,3 +75,36 @@ Implemented multi-journey record management for the journey Hub. Created Journey
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: P1: Empty state template cards, expired task filtering, login preloading, view-switch caching
+
+**Date**: 2026-06-04
+**Task**: P1: Empty state template cards, expired task filtering, login preloading, view-switch caching
+**Branch**: `main`
+
+### Summary
+
+Fixed four UX issues: (1) Empty kanban shows 4 non-interactive template demo cards across different stages that auto-disappear on first real job creation. (2) AgendaView now filters out past-date interview/exam tasks while preserving today's, completed, and non-time-sensitive tags. (3) Added isInitialLoading state with Promise.all preloading and kanban-matching skeleton UI to eliminate white-screen flicker on login. (4) Stabilized data-loading useEffect from unstable Zustand selector references to mount-only [] + ref guard, preventing duplicate fetches on view switches. Also fixed fetchTasks to use merge instead of replacement to prevent cross-month data loss, and replaced Math.random() in skeleton with deterministic values.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eb2baac` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
