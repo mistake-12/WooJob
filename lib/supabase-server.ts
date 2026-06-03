@@ -34,16 +34,27 @@ export async function createServerSupabaseClient() {
 /**
  * 同步方式获取 Server Supabase 客户端（适用于 Route Handlers）
  */
-export function createServerSupabaseClientSync() {
+export async function createServerSupabaseClientSync() {
+  const cookieStore = await cookies();
+
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
         getAll() {
-          return [];
+          return cookieStore.getAll();
         },
-        setAll() {},
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // 在 Route Handlers 中 set 可能因 Response header 已发送而抛错，
+            // Supabase 会自动在后续请求中重试，可以安全忽略
+          }
+        },
       },
     }
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import confetti from 'canvas-confetti';
 import { JobStage } from '@/types';
@@ -19,6 +20,7 @@ import { signOutClient } from '@/app/actions/signOutClient';
 const stages: JobStage[] = ['待投递', '已投递', '笔试中', '面试中', 'Offer', '已结束'];
 
 export default function Home() {
+  const router = useRouter();
   const jobs = useJobStore((s) => s.jobs);
   const trashedJobs = useJobStore((s) => s.trashedJobs);
   const updateJobStage = useJobStore((s) => s.updateJobStage);
@@ -242,6 +244,12 @@ export default function Home() {
                 >
                   日程
                 </button>
+                <button
+                  onClick={() => router.push('/journey')}
+                  className="px-4 py-1.5 rounded-full text-sm transition-colors bg-transparent text-gray-500 hover:text-gray-800"
+                >
+                  求职陪跑
+                </button>
               </div>
             </div>
 
@@ -365,9 +373,9 @@ export default function Home() {
                     <Plus className="w-5 h-5 text-[#8E7E6E]" />
                   </button>
                 </div>
-              ) : (
+              ) : currentView === 'agenda' ? (
                 <AgendaView />
-              )}
+              ) : null}
             </div>
 
             {/* 底部区域：仅看板视图显示 */}
@@ -377,7 +385,7 @@ export default function Home() {
           </div>
 
           {/* 右侧 AI 侧边栏 */}
-          <AISidebar />
+          <AISidebar activeFeature="ai" />
         </div>
       </div>
 

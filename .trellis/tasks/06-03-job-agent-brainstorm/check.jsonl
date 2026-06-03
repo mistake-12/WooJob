@@ -1,0 +1,2 @@
+{"file":"docs2/PRD-求职陪跑Agent2.md","reason":"核对实现是否仍符合Hub+Guide Agent、非线性阶段入口、Guide职责边界与未来阶段规划。"}
+{"file":".trellis/tasks/06-03-job-agent-brainstorm/prd.md","reason":"核对实现是否符合当前MVP约束：只做能力诊断与差距填补、独立路由、真实Guide Agent、核心产出持久化与日程复用。"}

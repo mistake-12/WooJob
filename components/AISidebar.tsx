@@ -7,6 +7,8 @@ import type { AIMessage, AIMessageAttachment, AIParsedData } from '@/types/datab
 import type { AIMode } from '@/app/actions/ai-helpers';
 import DraftPreviewCard from './DraftPreviewCard';
 
+import JourneyChat from './journey/JourneyChat';
+
 const MODES: { key: AIMode; label: string }[] = [
   { key: 'chat', label: '对话' },
   { key: 'extract_job', label: '建岗位' },
@@ -20,7 +22,7 @@ const MODE_WELCOME: Record<AIMode, string> = {
   extract_task: '已切换至日程建档模式。请发送面试/笔试通知截图，我来帮您提取信息并加入日历。',
 };
 
-export default function AISidebar() {
+export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'ai' | 'journey' }) {
   const {
     aiConversations,
     aiCurrentConversationId,
@@ -345,6 +347,11 @@ export default function AISidebar() {
         </div>
       </div>
 
+      {/* ── 内容区域：AI 对话 / Journey 入口 ───────────────────────────── */}
+      {activeFeature === 'journey' ? (
+        <JourneyChat />
+      ) : (
+        <>
       {/* ── 消息区域 ───────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 bg-[#E8E5E0]">
         {/* 无消息时显示欢迎气泡（会话自动创建，组件初始化即可输入） */}
@@ -410,13 +417,16 @@ export default function AISidebar() {
         {/* 有消息但未发过时，显示欢迎气泡滚动锚点 */}
         {aiMessages.length > 0 && <div ref={messagesEndRef} />}
       </div>
+        </>
+      )}
 
-      {/* ── 输入框 ─────────────────────────────────────────────────────── */}
-      <div
-        className="p-4 border-t border-[#CFCCC8]"
-        onPaste={handlePaste}
-      >
-        {/* 待发送图片预览 */}
+      {/* ── 输入框（AI 模式下，journey 模式的输入已内置在 JourneyChat 中） */}
+      {activeFeature !== 'journey' && (
+        <div
+          className="p-4 border-t border-[#CFCCC8]"
+          onPaste={handlePaste}
+        >
+          {/* 待发送图片预览 */}
         {pendingAttachments.length > 0 && (
           <div className="mb-2 flex gap-2 flex-wrap">
             {pendingAttachments.map((att, i) => (
@@ -510,6 +520,7 @@ export default function AISidebar() {
           </p>
         )}
       </div>
+      )}
     </div>
   );
 }
