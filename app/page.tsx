@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import confetti from 'canvas-confetti';
-import { JobStage } from '@/types';
+import { JobStage, Job } from '@/types';
 import { useJobStore } from '@/store/useJobStore';
 import KanbanColumn from '@/components/KanbanColumn';
 import BottomShelf from '@/components/BottomShelf';
@@ -122,21 +122,21 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isProfileMenuOpen]);
 
-  // 初始化：加载数据（仅 mount 时执行一次，避免视图切换时重复请求）
-  const initialLoadDone = useRef(false);
+  // 初始化加载：resetStore 会将 isInitialLoading 重置为 true，
+  // 从而触发重新加载（登出再登入场景）
   const isInitialLoading = useJobStore((s) => s.isInitialLoading);
   useEffect(() => {
-    if (initialLoadDone.current) return;
-    initialLoadDone.current = true;
+    if (!isInitialLoading) return;
+    let cancelled = false;
     Promise.all([
       fetchJobs(),
       fetchTrashedJobs(),
       fetchTasks(),
     ]).finally(() => {
-      useJobStore.setState({ isInitialLoading: false });
+      if (!cancelled) useJobStore.setState({ isInitialLoading: false });
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => { cancelled = true; };
+  }, [isInitialLoading, fetchJobs, fetchTrashedJobs, fetchTasks]);
 
   // 按 stage 分组，每组内按 position 排序
   const jobsByStage = stages.reduce((acc, stage) => {
@@ -179,12 +179,21 @@ export default function Home() {
     );
   }
 
+  /** 模板卡片对应的 Job 对象（store 中不存在，传给 SideDrawer 使用） */
+  const [externalTemplateJob, setExternalTemplateJob] = useState<typeof TEMPLATE_JOBS[number] | null>(null);
+
   function handleOpenJob(job: { id: string }) {
     setSelectedJobId(job.id);
+    if (job.id.startsWith('template-')) {
+      setExternalTemplateJob(job as typeof TEMPLATE_JOBS[number]);
+    } else {
+      setExternalTemplateJob(null);
+    }
   }
 
   function handleCloseDrawer() {
     setSelectedJobId(null);
+    setExternalTemplateJob(null);
   }
 
   function handleAddJob(stage?: JobStage) {
@@ -193,7 +202,7 @@ export default function Home() {
   }
 
   function handleUpdateJob(id: string, updated: Partial<ReturnType<typeof useJobStore.getState>['jobs'][number]> & { tags?: Record<string, unknown> }) {
-    if (id.startsWith('new-')) {
+    if (id.startsWith('new-') || id.startsWith('template-')) {
       createJob({
         company: (updated.company as string) || '',
         title: (updated.title as string) || '',
@@ -209,6 +218,7 @@ export default function Home() {
         },
       });
       setSelectedJobId(null);
+      setExternalTemplateJob(null);
     } else {
       updateJob(id, {
         company: updated.company as string | undefined,
@@ -376,33 +386,30 @@ export default function Home() {
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* 中间内容容器：占满剩余高度 */}
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              {currentView === 'kanban' ? (
-                isInitialLoading ? (
-                  /* 加载骨架屏：与看板布局一致的 6 列灰色占位 */
-                  <div className="flex gap-0 flex-1 min-h-0 overflow-x-auto overflow-y-hidden items-stretch px-8 pt-0">
-                    {stages.map((stage) => (
-                      <div
-                        key={stage}
-                        className="flex flex-col flex-shrink-0 h-full w-[260px] border-r border-[#CFCCC8]"
-                      >
-                        {/* 列标题占位 */}
-                        <div className="px-3 pt-4 pb-4 border-b border-[#CFCCC8] shrink-0">
-                          <div className="h-5 bg-[#E0DCD1] rounded w-16 animate-pulse" />
-                        </div>
-                        {/* 卡片占位 */}
-                        <div className="flex-1 min-h-0 px-3 pt-3 flex flex-col gap-3 overflow-y-auto">
-                          {[88, 104, 96].map((h, i) => (
-                            <div
-                              key={i}
-                              className="bg-[#E8E5DF] rounded-md p-3 animate-pulse"
-                              style={{ height: `${h}px` }}
-                            />
-                          ))}
-                        </div>
+              {isInitialLoading ? (
+                /* 加载骨架屏：与看板布局一致的 6 列灰色占位 */
+                <div className="flex gap-0 flex-1 min-h-0 overflow-x-auto overflow-y-hidden items-stretch px-8 pt-0">
+                  {stages.map((stage) => (
+                    <div
+                      key={stage}
+                      className="flex flex-col flex-shrink-0 h-full w-[260px] border-r border-[#CFCCC8]"
+                    >
+                      <div className="px-3 pt-4 pb-4 border-b border-[#CFCCC8] shrink-0">
+                        <div className="h-5 bg-[#E0DCD1] rounded w-16 animate-pulse" />
                       </div>
-                    ))}
-                  </div>
-                ) : (
+                      <div className="flex-1 min-h-0 px-3 pt-3 flex flex-col gap-3 overflow-y-auto">
+                        {[88, 104, 96].map((h, i) => (
+                          <div
+                            key={i}
+                            className="bg-[#E8E5DF] rounded-md p-3 animate-pulse"
+                            style={{ height: `${h}px` }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : currentView === 'kanban' ? (
                 <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
                   <DragDropContext onDragEnd={onDragEnd}>
                     <div className="flex gap-0 flex-1 min-h-0 overflow-x-auto overflow-y-hidden items-stretch px-8 pt-0">
@@ -419,7 +426,6 @@ export default function Home() {
                       ))}
                     </div>
                   </DragDropContext>
-                  {/* FAB: 新建岗位，贴在已结束列右下角 */}
                   <button
                     onClick={() => handleAddJob()}
                     className="absolute bottom-3 right-3 z-50 w-9 h-9 rounded-full bg-white/70 backdrop-blur-sm border border-gray-200 shadow-sm hover:bg-white hover:shadow-md hover:scale-105 transition-all duration-300 flex items-center justify-center"
@@ -428,7 +434,6 @@ export default function Home() {
                     <Plus className="w-5 h-5 text-[#8E7E6E]" />
                   </button>
                 </div>
-                )
               ) : currentView === 'agenda' ? (
                 <AgendaView />
               ) : currentView === 'journey' ? (
@@ -443,10 +448,10 @@ export default function Home() {
               ) : null}
             </div>
 
-            {/* 底部区域：仅看板视图显示 */}
-            {currentView === 'kanban' && (
+            {/* 底部区域：始终挂载避免反复加载简历和任务数据 */}
+            <div className={currentView === 'kanban' ? '' : 'hidden'}>
               <BottomShelf onTaskClick={(id) => setSelectedTaskId(id)} />
-            )}
+            </div>
           </div>
 
           {/* 右侧 AI 侧边栏 */}
@@ -479,6 +484,7 @@ export default function Home() {
           jobId={selectedJobId}
           onClose={handleCloseDrawer}
           onUpdate={handleUpdateJob}
+          externalJob={externalTemplateJob as Job | null}
         />
       )}
 

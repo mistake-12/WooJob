@@ -397,17 +397,15 @@ export default function AgendaView({}: AgendaViewProps) {
   const [historyMonth, setHistoryMonth] = useState(() => getSmartDefaultMonth());
   /** 历史区是否展开 */
   const [historyExpanded, setHistoryExpanded] = useState(false);
-  /** 记录哪些月份已加载（当月由 page.tsx 加载，这里只管历史月） */
-  const [loadedMonths, setLoadedMonths] = useState<Set<string>>(() => {
-    const current = new Date().toISOString().slice(0, 7);
-    return new Set([current]);
-  });
+  /** 跨视图缓存的已加载月份（从 Zustand store 读取，不再每次挂载重置） */
+  const loadedMonths = useJobStore((s) => s.loadedMonths);
+  const markMonthLoaded = useJobStore((s) => s.markMonthLoaded);
 
   /** 切月时加载历史月份（loadedMonths 去重）；当月任务由 page.tsx 初始化时已加载） */
   useEffect(() => {
     if (!loadedMonths.has(historyMonth)) {
       fetchTasks(historyMonth);
-      setLoadedMonths((prev) => new Set([...prev, historyMonth]));
+      markMonthLoaded(historyMonth);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historyMonth]);

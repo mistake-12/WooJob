@@ -85,6 +85,10 @@ interface JobStore {
   error: string | null;
   /** 正在按月加载的月份，避免重复请求导致闪烁 */
   loadingMonth: string | null;
+  /** AgendaView 已加载的历史月份集合（跨视图切换保留） */
+  loadedMonths: Set<string>;
+  /** 将某历史月份标记为已加载 */
+  markMonthLoaded: (month: string) => void;
 
   // ── Auth State ─────────────────────────────────────────────────────────
   /** 调用 signOut 后需要清理所有本地状态，防止数据串台 */
@@ -253,6 +257,7 @@ export const useJobStore = create<JobStore>((set, get) => ({
   isInitialLoading: true,
   error: null,
   loadingMonth: null,
+  loadedMonths: new Set([new Date().toISOString().slice(0, 7)]),
 
   // ── Auth State ──────────────────────────────────────────────────────
   resetStore: () => {
@@ -265,6 +270,7 @@ export const useJobStore = create<JobStore>((set, get) => ({
       isInitialLoading: true,
       error: null,
       loadingMonth: null,
+      loadedMonths: new Set([new Date().toISOString().slice(0, 7)]),
       // AI 状态全部重置，防止新用户看到旧用户的对话记录
       aiConversations: [],
       aiCurrentConversationId: null,
@@ -528,8 +534,8 @@ export const useJobStore = create<JobStore>((set, get) => ({
         ];
         return { tasks: merged };
       } else {
-        // 无 month 参数：保留本地新建任务（id 不在服务端返回中），其余用服务端数据替换
-        const keptLocal = s.tasks.filter((t) => !newIds.has(t.id));
+        // 无 month 参数：保留本地新建任务（排除临时 id，createTask 回调会替换）
+        const keptLocal = s.tasks.filter((t) => !newIds.has(t.id) && !t.id.startsWith('temp-'));
         return { tasks: [...keptLocal, ...newTasks] };
       }
     });
@@ -769,4 +775,11 @@ export const useJobStore = create<JobStore>((set, get) => ({
   getJobById: (id) => get().jobs.find((j) => j.id === id),
 
   getTaskById: (id) => get().tasks.find((t) => t.id === id),
+
+  // ── Calendar ─────────────────────────────────────────────────────────────
+  markMonthLoaded: (month: string) => set((s) => {
+    const next = new Set(s.loadedMonths);
+    next.add(month);
+    return { loadedMonths: next };
+  }),
 }));
