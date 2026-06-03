@@ -96,6 +96,7 @@ interface JobStore {
 
   // ── Jobs Actions ────────────────────────────────────────────────────────
   fetchJobs: () => Promise<void>;
+  _seedTemplates: () => void;
   createJob: (input: CreateJobInput) => Promise<Job | null>;
   updateJob: (id: string, input: UpdateJobInput) => Promise<Job | null>;
   updateJobStage: (id: string, newStage: string) => Promise<void>;
@@ -297,6 +298,28 @@ export const useJobStore = create<JobStore>((set, get) => ({
 
   // ── Jobs ────────────────────────────────────────────────────────────────
 
+  /** 新用户模板数据，直接注入 store（和真实卡片走完全一致的代码路径） */
+  _seedTemplates: () => {
+    const templates: Job[] = [
+      { id: 'template-1', company: '字节跳动', title: '高级产品经理', stage: '待投递', deadline: '2026-06-15', time: '', tags: { referral: '有' }, progress: 10, position: 0 },
+      { id: 'template-2', company: '腾讯', title: 'AI 产品经理', stage: '已投递', deadline: '2026-06-10', time: '', tags: {}, progress: 30, position: 0 },
+      { id: 'template-3', company: '美团', title: '策略产品经理', stage: '面试中', deadline: '2026-06-08', time: '', tags: { round: '技术二面' }, progress: 74, position: 0 },
+      { id: 'template-4', company: '阿里巴巴', title: '数据产品经理', stage: 'Offer', deadline: '2026-06-01', time: '', tags: {}, progress: 100, position: 0 },
+    ];
+    // 重新编号 position 以避免各列内部排序冲突
+    const jobsByStage = new Map<JobStage, Job[]>();
+    templates.forEach((t) => {
+      const list = jobsByStage.get(t.stage) ?? [];
+      list.push(t);
+      jobsByStage.set(t.stage, list);
+    });
+    const seeded: Job[] = [];
+    jobsByStage.forEach((list) => {
+      list.forEach((t, i) => { t.position = i; seeded.push(t); });
+    });
+    set({ jobs: seeded });
+  },
+
   fetchJobs: async () => {
     set({ isLoading: true, error: null });
     const result = await jobsActions.getJobs();
@@ -305,7 +328,12 @@ export const useJobStore = create<JobStore>((set, get) => ({
       return;
     }
     const jobs = (result.jobs ?? []).map(dbJobToUiJob);
-    set({ jobs, isLoading: false });
+    if (jobs.length === 0) {
+      get()._seedTemplates();
+    } else {
+      set({ jobs });
+    }
+    set({ isLoading: false });
   },
 
   createJob: async (input) => {
@@ -315,8 +343,12 @@ export const useJobStore = create<JobStore>((set, get) => ({
       set({ isLoading: false, error: result.error ?? 'Failed to create job' });
       return null;
     }
-    // 直接使用服务端返回的完整 job 数据（包含真实 id、created_at 等）
     const job = dbJobToUiJob(result.job);
+    set((s) => ({
+      jobs: [job, ...s.jobs.filter((j) => !j.id.startsWith('template-'))],
+      isLoading: false,
+    }));
+    return job;
     set((s) => ({ jobs: [job, ...s.jobs], isLoading: false }));
     return job;
   },

@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import confetti from 'canvas-confetti';
-import { JobStage, Job } from '@/types';
+import { JobStage } from '@/types';
 import { useJobStore } from '@/store/useJobStore';
 import KanbanColumn from '@/components/KanbanColumn';
 import BottomShelf from '@/components/BottomShelf';
@@ -18,20 +18,6 @@ import { getProfile, updateProfile } from '@/app/actions/profile';
 import { signOutClient } from '@/app/actions/signOutClient';
 
 const stages: JobStage[] = ['待投递', '已投递', '笔试中', '面试中', 'Offer', '已结束'];
-
-/** 空状态模板卡片 —— 首次使用时展示在看板中，让用户快速理解产品价值 */
-const TEMPLATE_JOBS = [
-  { id: 'template-1', company: '字节跳动', title: '高级产品经理', stage: '待投递' as JobStage, deadline: '2026-06-15', tags: { referral: '有' as const }, progress: 10, position: 0, time: '' },
-  { id: 'template-2', company: '腾讯', title: 'AI 产品经理', stage: '已投递' as JobStage, deadline: '2026-06-10', tags: {}, progress: 30, position: 0, time: '' },
-  { id: 'template-3', company: '美团', title: '策略产品经理', stage: '面试中' as JobStage, deadline: '2026-06-08', tags: { round: '技术二面' }, progress: 74, position: 0, time: '' },
-  { id: 'template-4', company: '阿里巴巴', title: '数据产品经理', stage: 'Offer' as JobStage, deadline: '2026-06-01', tags: {}, progress: 100, position: 0, time: '' },
-];
-
-/** 将模板卡片按 stage 分组 */
-const templateJobsByStage = stages.reduce((acc, stage) => {
-  acc[stage] = TEMPLATE_JOBS.filter((job) => job.stage === stage);
-  return acc;
-}, {} as Record<JobStage, typeof TEMPLATE_JOBS>);
 
 export default function Home() {
   const jobs = useJobStore((s) => s.jobs);
@@ -153,42 +139,13 @@ export default function Home() {
     if (!destination) return;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
-    // 模板卡片拖拽：从模板数据创建真实 job，而不是 reorder 不存在的 store 条目
-    if (draggableId.startsWith('template-')) {
-      const template = TEMPLATE_JOBS.find((t) => t.id === draggableId);
-      if (!template) return;
-      if (destination.droppableId === 'Offer' && source.droppableId !== 'Offer') {
-        setIsShaking(true); setShowCelebration(true);
-        setTimeout(() => { setIsShaking(false); setShowCelebration(false); }, 1800);
-        confetti({ particleCount: 225, spread: 150, origin: { y: 0.6 }, colors: ['#8E7E6E', '#C5A059', '#EBE8E1', '#FFFFFF'] });
-      }
-      createJob({
-        company: template.company,
-        title: template.title,
-        stage: destination.droppableId as JobStage,
-        deadline: template.deadline || undefined,
-        tags: template.tags as any,
-      });
-      return;
-    }
-
     if (destination.droppableId === 'Offer' && source.droppableId !== 'Offer') {
       setIsShaking(true);
       setShowCelebration(true);
-      setTimeout(() => {
-        setIsShaking(false);
-        setShowCelebration(false);
-      }, 1800);
-
-      confetti({
-        particleCount: 225,
-        spread: 150,
-        origin: { y: 0.6 },
-        colors: ['#8E7E6E', '#C5A059', '#EBE8E1', '#FFFFFF'],
-      });
+      setTimeout(() => { setIsShaking(false); setShowCelebration(false); }, 1800);
+      confetti({ particleCount: 225, spread: 150, origin: { y: 0.6 }, colors: ['#8E7E6E', '#C5A059', '#EBE8E1', '#FFFFFF'] });
     }
 
-    // 调用 reorderJobs 处理同列排序和跨列移动
     reorderJobs(
       draggableId,
       source.droppableId as JobStage,
@@ -198,21 +155,12 @@ export default function Home() {
     );
   }
 
-  /** 模板卡片对应的 Job 对象（store 中不存在，传给 SideDrawer 使用） */
-  const [externalTemplateJob, setExternalTemplateJob] = useState<typeof TEMPLATE_JOBS[number] | null>(null);
-
   function handleOpenJob(job: { id: string }) {
     setSelectedJobId(job.id);
-    if (job.id.startsWith('template-')) {
-      setExternalTemplateJob(job as typeof TEMPLATE_JOBS[number]);
-    } else {
-      setExternalTemplateJob(null);
-    }
   }
 
   function handleCloseDrawer() {
     setSelectedJobId(null);
-    setExternalTemplateJob(null);
   }
 
   function handleAddJob(stage?: JobStage) {
@@ -221,7 +169,7 @@ export default function Home() {
   }
 
   function handleUpdateJob(id: string, updated: Partial<ReturnType<typeof useJobStore.getState>['jobs'][number]> & { tags?: Record<string, unknown> }) {
-    if (id.startsWith('new-') || id.startsWith('template-')) {
+    if (id.startsWith('new-')) {
       createJob({
         company: (updated.company as string) || '',
         title: (updated.title as string) || '',
@@ -237,7 +185,6 @@ export default function Home() {
         },
       });
       setSelectedJobId(null);
-      setExternalTemplateJob(null);
     } else {
       updateJob(id, {
         company: updated.company as string | undefined,
@@ -437,7 +384,6 @@ export default function Home() {
                           key={stage}
                           title={stage}
                           jobs={jobsByStage[stage]}
-                          templateJobs={totalJobs === 0 ? templateJobsByStage[stage] : undefined}
                           onOpenJob={handleOpenJob}
                           onAddJob={handleAddJob}
                           onTrashJob={(job) => trashJob(job.id)}
@@ -503,7 +449,6 @@ export default function Home() {
           jobId={selectedJobId}
           onClose={handleCloseDrawer}
           onUpdate={handleUpdateJob}
-          externalJob={externalTemplateJob as Job | null}
         />
       )}
 

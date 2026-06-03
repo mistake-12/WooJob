@@ -14,8 +14,6 @@ interface SideDrawerProps {
   jobId: string;
   onClose: () => void;
   onUpdate: (id: string, updated: Partial<Job>) => void;
-  /** 模板卡片/外部传入的 job 对象，当 store 中找不到时使用 */
-  externalJob?: Job | null;
 }
 
 const STAGES: JobStage[] = ['待投递', '已投递', '笔试中', '面试中', 'Offer', '已结束'];
@@ -32,10 +30,10 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export default function SideDrawer({ jobId, onClose, onUpdate, externalJob }: SideDrawerProps) {
+export default function SideDrawer({ jobId, onClose, onUpdate }: SideDrawerProps) {
   const getJobById = useJobStore((s) => s.getJobById);
-  const job = getJobById(jobId) ?? externalJob ?? null;
-  const isNewJob = jobId.startsWith('new-') || jobId.startsWith('template-');
+  const job = getJobById(jobId);
+  const isNewJob = jobId.startsWith('new-');
 
   const [activeTab, setActiveTab] = useState<Tab>('details');
   const [isEditing, setIsEditing] = useState(false);
@@ -62,9 +60,9 @@ export default function SideDrawer({ jobId, onClose, onUpdate, externalJob }: Si
     requestAnimationFrame(() => setIsVisible(true));
   }, []);
 
-  /* 同步外部 job 变化——切换卡片时重置；新建空岗位时强制编辑；模板卡片预填数据 */
+  /* 同步外部 job 变化（切换卡片时重置）；新建空岗位时强制进入编辑模式 */
   useEffect(() => {
-    if (job) {
+    if (job && !isNewJob) {
       setDraft({
         company: job.company,
         title: job.title,
@@ -78,7 +76,7 @@ export default function SideDrawer({ jobId, onClose, onUpdate, externalJob }: Si
         description: job.description ?? '',
         notes: job.notes ?? '',
       });
-      setIsEditing(isNewJob);
+      setIsEditing(false);
     } else {
       setIsEditing(true);
     }

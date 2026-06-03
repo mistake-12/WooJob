@@ -8,8 +8,6 @@ import { Plus } from 'lucide-react';
 interface KanbanColumnProps {
   title: JobStage;
   jobs: Job[];
-  /** 当 jobs 为空时展示的模板卡片（和真实卡片完全一致的 JobCard） */
-  templateJobs?: Job[];
   onOpenJob: (job: Job) => void;
   onAddJob: (stage: JobStage) => void;
   onTrashJob?: (job: Job) => void;
@@ -17,14 +15,12 @@ interface KanbanColumnProps {
 
 const LAST_STAGE: JobStage = '已结束';
 
-export default function KanbanColumn({ title, jobs, templateJobs, onOpenJob, onAddJob, onTrashJob }: KanbanColumnProps) {
+export default function KanbanColumn({ title, jobs, onOpenJob, onAddJob, onTrashJob }: KanbanColumnProps) {
   const count = String(jobs.length).padStart(2, '0');
   const isLast = title === LAST_STAGE;
-  const hasTemplates = templateJobs && templateJobs.length > 0;
 
   return (
     <div className={`flex flex-col flex-shrink-0 h-full w-[260px]${isLast ? '' : ' border-r border-[#CFCCC8]'}`}>
-      {/* 列标题 — 固定头部，不参与滚动 */}
       <div className="px-3 pt-4 pb-4 border-b border-[#CFCCC8] group shrink-0">
         <h2 className="flex items-center gap-2">
           <span className="text-base font-bold text-gray-900">{title}</span>
@@ -39,7 +35,6 @@ export default function KanbanColumn({ title, jobs, templateJobs, onOpenJob, onA
         </h2>
       </div>
 
-      {/* 卡片列表 — Droppable 滚动层，flex-1 + min-h-0 让 flex 收缩生效 */}
       <Droppable droppableId={title}>
         {(provided, snapshot) => (
           <div
@@ -49,33 +44,21 @@ export default function KanbanColumn({ title, jobs, templateJobs, onOpenJob, onA
               snapshot.isDraggingOver ? 'bg-[#E0DDD6] shadow-[inset_0_2px_8px_rgba(0,0,0,0.06)]' : ''
             }`}
           >
-            {/* 真实卡片列表（含模板卡片，JobCard 内部自带 Draggable 所以外面不套） */}
-            {jobs.length === 0 && hasTemplates
-              ? templateJobs!.map((job, i) => (
-                  <JobCard
-                    key={job.id}
-                    job={job}
-                    index={i}
-                    onOpen={onOpenJob}
-                    onTrash={onTrashJob}
-                  />
-                ))
-              : jobs.length === 0 ? (
-                <div className="flex items-center justify-center h-16 text-xs text-[#BBBBBB]">
-                  暂无岗位
-                </div>
-              ) : (
-                jobs.map((job, index) => (
-                  <JobCard
-                    key={job.id}
-                    job={job}
-                    index={index}
-                    onOpen={onOpenJob}
-                    onTrash={onTrashJob}
-                  />
-                ))
-              )}
-            {provided.placeholder}
+            {jobs.length === 0 ? (
+              <div className="flex items-center justify-center h-16 text-xs text-[#BBBBBB]">
+                暂无岗位
+              </div>
+            ) : (
+              jobs.map((job, index) => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  index={index}
+                  onOpen={onOpenJob}
+                  onTrash={onTrashJob}
+                />
+              ))
+            )}
             {provided.placeholder}
           </div>
         )}
