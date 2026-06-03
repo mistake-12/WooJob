@@ -443,6 +443,8 @@ export interface SaveArtifactInput {
   stage: string;
   artifactType: string;
   data: Record<string, unknown>;
+  /** 可选：指定 journeyId，不传则自动获取或创建最新一条 */
+  journeyId?: string;
 }
 
 export interface SaveArtifactResult {
@@ -457,20 +459,32 @@ export interface SaveArtifactResult {
 export async function saveArtifact(
   input: SaveArtifactInput
 ): Promise<SaveArtifactResult> {
-  const { stage, artifactType, data } = input;
+  const { stage, artifactType, data, journeyId: inputJourneyId } = input;
 
   try {
     const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: '未登录或会话已过期' };
 
-    // 获取或创建 journey
-    const journeyResult = await getOrCreateJourney();
-    if (journeyResult.error || !journeyResult.journey) {
-      return { error: journeyResult.error ?? '无法获取旅程' };
+    // 获取或创建 journey：优先使用传入的 journeyId
+    let journeyId: string;
+    if (inputJourneyId) {
+      // 验证归属
+      const { data: owned } = await supabase
+        .from('ai_journeys')
+        .select('id')
+        .eq('id', inputJourneyId)
+        .eq('user_id', user.id)
+        .single();
+      if (!owned) return { error: '陪跑记录不存在或无权访问' };
+      journeyId = inputJourneyId;
+    } else {
+      const journeyResult = await getOrCreateJourney();
+      if (journeyResult.error || !journeyResult.journey) {
+        return { error: journeyResult.error ?? '无法获取旅程' };
+      }
+      journeyId = journeyResult.journey.id as string;
     }
-
-    const journeyId = journeyResult.journey.id as string;
 
     // 检查是否已存在同 stage + artifactType 的记录
     const { data: existing } = await supabase

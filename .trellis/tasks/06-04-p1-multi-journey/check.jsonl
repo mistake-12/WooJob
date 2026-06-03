@@ -1,0 +1,2 @@
+{"file":".trellis/tasks/06-04-p1-multi-journey/prd.md","reason":"核对实现是否符合交互形态、位置布局、改名/新建策略。"}
+{"file":".trellis/spec/frontend/quality-guidelines.md","reason":"核对是否有违反spa架构或router.push等禁止模式。"}

@@ -120,24 +120,36 @@ export interface GetLatestDiagnosisResult {
 
 /**
  * 从 ai_journey_artifacts 读取用户最新的诊断报告
+ * @param journeyId 可选：指定 journeyId，不传则自动获取最新一条
  */
-export async function getLatestDiagnosis(): Promise<GetLatestDiagnosisResult> {
+export async function getLatestDiagnosis(journeyId?: string): Promise<GetLatestDiagnosisResult> {
   try {
     const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: '未登录或会话已过期' };
 
-    const journeyResult = await getOrCreateJourney();
-    if (journeyResult.error || !journeyResult.journey) {
-      return { error: journeyResult.error ?? '无法获取旅程' };
+    let jId: string;
+    if (journeyId) {
+      const { data: owned } = await supabase
+        .from('ai_journeys')
+        .select('id')
+        .eq('id', journeyId)
+        .eq('user_id', user.id)
+        .single();
+      if (!owned) return { error: '陪跑记录不存在或无权访问' };
+      jId = journeyId;
+    } else {
+      const journeyResult = await getOrCreateJourney();
+      if (journeyResult.error || !journeyResult.journey) {
+        return { error: journeyResult.error ?? '无法获取旅程' };
+      }
+      jId = journeyResult.journey.id as string;
     }
-
-    const journeyId = journeyResult.journey.id as string;
 
     const { data, error } = await supabase
       .from('ai_journey_artifacts')
       .select('*')
-      .eq('journey_id', journeyId)
+      .eq('journey_id', jId)
       .eq('stage', 'diagnosis')
       .eq('artifact_type', 'diagnosis_report')
       .order('created_at', { ascending: false })
@@ -171,24 +183,36 @@ export interface GetExistingPlanResult {
 
 /**
  * 获取当前用户已有的差距填补行动计划
+ * @param journeyId 可选：指定 journeyId，不传则自动获取最新一条
  */
-export async function getExistingPlan(): Promise<GetExistingPlanResult> {
+export async function getExistingPlan(journeyId?: string): Promise<GetExistingPlanResult> {
   try {
     const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: '未登录或会话已过期' };
 
-    const journeyResult = await getOrCreateJourney();
-    if (journeyResult.error || !journeyResult.journey) {
-      return { error: journeyResult.error ?? '无法获取旅程' };
+    let jId: string;
+    if (journeyId) {
+      const { data: owned } = await supabase
+        .from('ai_journeys')
+        .select('id')
+        .eq('id', journeyId)
+        .eq('user_id', user.id)
+        .single();
+      if (!owned) return { error: '陪跑记录不存在或无权访问' };
+      jId = journeyId;
+    } else {
+      const journeyResult = await getOrCreateJourney();
+      if (journeyResult.error || !journeyResult.journey) {
+        return { error: journeyResult.error ?? '无法获取旅程' };
+      }
+      jId = journeyResult.journey.id as string;
     }
-
-    const journeyId = journeyResult.journey.id as string;
 
     const { data, error } = await supabase
       .from('ai_journey_artifacts')
       .select('*')
-      .eq('journey_id', journeyId)
+      .eq('journey_id', jId)
       .eq('stage', 'gap_filling')
       .eq('artifact_type', 'gap_filling_plan')
       .order('created_at', { ascending: false })
@@ -380,27 +404,41 @@ export interface SavePlanResult {
 
 /**
  * 保存差距填补行动计划到 ai_journey_artifacts
+ * @param plan 行动计划
+ * @param journeyId 可选：指定 journeyId，不传则自动获取最新一条
  */
 export async function savePlan(
-  plan: GapFillingPlan
+  plan: GapFillingPlan,
+  journeyId?: string
 ): Promise<SavePlanResult> {
   try {
     const supabase = await createServerSupabaseClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: '未登录或会话已过期' };
 
-    const journeyResult = await getOrCreateJourney();
-    if (journeyResult.error || !journeyResult.journey) {
-      return { error: journeyResult.error ?? '无法获取旅程' };
+    let jId: string;
+    if (journeyId) {
+      const { data: owned } = await supabase
+        .from('ai_journeys')
+        .select('id')
+        .eq('id', journeyId)
+        .eq('user_id', user.id)
+        .single();
+      if (!owned) return { error: '陪跑记录不存在或无权访问' };
+      jId = journeyId;
+    } else {
+      const journeyResult = await getOrCreateJourney();
+      if (journeyResult.error || !journeyResult.journey) {
+        return { error: journeyResult.error ?? '无法获取旅程' };
+      }
+      jId = journeyResult.journey.id as string;
     }
-
-    const journeyId = journeyResult.journey.id as string;
 
     // 检查是否已存在 plan artifact
     const { data: existing } = await supabase
       .from('ai_journey_artifacts')
       .select('id')
-      .eq('journey_id', journeyId)
+      .eq('journey_id', jId)
       .eq('stage', 'gap_filling')
       .eq('artifact_type', 'gap_filling_plan')
       .limit(1)
@@ -420,7 +458,7 @@ export async function savePlan(
       }
 
       // 标记差距填补阶段完成
-      updateJourneyStage(journeyId, 'gap_filling').catch((err) => {
+      updateJourneyStage(jId, 'gap_filling').catch((err) => {
         console.warn('[savePlan] Failed to update journey stage:', err);
       });
 
@@ -430,7 +468,7 @@ export async function savePlan(
     const { data: created, error: insertError } = await supabase
       .from('ai_journey_artifacts')
       .insert({
-        journey_id: journeyId,
+        journey_id: jId,
         user_id: user.id,
         stage: 'gap_filling',
         artifact_type: 'gap_filling_plan',
@@ -444,7 +482,7 @@ export async function savePlan(
     }
 
     // 标记差距填补阶段完成
-    updateJourneyStage(journeyId, 'gap_filling').catch((err) => {
+    updateJourneyStage(jId, 'gap_filling').catch((err) => {
       console.warn('[savePlan] Failed to update journey stage:', err);
     });
 

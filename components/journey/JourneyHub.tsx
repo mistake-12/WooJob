@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { BarChart3, BookOpen, FileText, MessageSquare, Send, TrendingUp, ArrowLeft } from 'lucide-react';
 import JourneyStageCard, { type JourneyStageCardProps, type JourneyStageStatus } from './JourneyStageCard';
+import JourneySwitcher from './JourneySwitcher';
 import DiagnosisForm from './diagnosis/DiagnosisForm';
 import JobPreviewCard from './diagnosis/JobPreviewCard';
 import DiagnosisReportView from './diagnosis/DiagnosisReportView';
@@ -10,7 +11,8 @@ import GapFillingView from './gap/GapFillingView';
 import type { JobSnapshot, DiagnosisReport } from '@/types/diagnosis';
 import type { DiagnosisFlowStage } from '@/types/diagnosis';
 import { generateDiagnosisReport, saveArtifact } from '@/app/actions/diagnosis';
-import { getJourneyHubStatus, updateJourneyStage, getOrCreateJourney } from '@/app/actions/journey-ai';
+import { getJourneyHubStatus, updateJourneyStage, getOrCreateJourney, listUserJourneys, createJourney, renameJourney } from '@/app/actions/journey-ai';
+import type { JourneyListItem } from '@/app/actions/journey-ai';
 
 /** 阶段静态配置（不含动态 status，运行时注入） */
 type StageConfig = Omit<JourneyStageCardProps, 'status' | 'onSelect'>;
@@ -74,36 +76,81 @@ interface JourneyHubProps {
   currentStage: string | null;
   onStageSelect: (stageId: string) => void;
   onBackToHub: () => void;
+  /** 当 journeyId 变化时通知父组件（用于同步 AISidebar） */
+  onJourneyChange?: (journeyId: string | null) => void;
 }
 
-export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }: JourneyHubProps) {
+export default function JourneyHub({ currentStage, onStageSelect, onBackToHub, onJourneyChange }: JourneyHubProps) {
+  // ── 多 Journey 状态 ──────────────────────────────────────────────────
+  const [journeys, setJourneys] = useState<JourneyListItem[]>([]);
+  const [journeyId, setJourneyId] = useState<string | null>(null);
+
   // ── Hub 状态（卡片 status）────────────────────────────────────────────
   const [hubStatus, setHubStatus] = useState<{
     diagnosisCompleted: boolean;
     gapFillingCompleted: boolean;
   } | null>(null);
-  const [journeyId, setJourneyId] = useState<string | null>(null);
 
+  // 初始化：加载 journey 列表 + 选中最近一条
   useEffect(() => {
     let cancelled = false;
     async function initHub() {
-      // 获取 journey（可能创建）
-      const jResult = await getOrCreateJourney();
+      // 获取 journey 列表
+      const listResult = await listUserJourneys();
       if (cancelled) return;
-      if (jResult.journey) {
-        setJourneyId(jResult.journey.id as string);
+
+      if (listResult.error) {
+        console.warn('[JourneyHub] Failed to list journeys:', listResult.error);
+        // 降级：回退到旧的 getOrCreateJourney 行为
+        const jResult = await getOrCreateJourney();
+        if (cancelled) return;
+        if (jResult.journey) {
+          const j = jResult.journey;
+          const jId = j.id as string;
+          setJourneyId(jId);
+          setJourneys([{ id: jId, title: j.title as string, currentStage: (j.current_stage as string) ?? 'hub', completedStages: Array.isArray(j.completed_stages) ? j.completed_stages as string[] : [], createdAt: j.created_at as string }]);
+          onJourneyChange?.(jId);
+        }
+      } else if (listResult.journeys && listResult.journeys.length > 0) {
+        setJourneys(listResult.journeys);
+        // 自动选中最新一条
+        const latestId = listResult.journeys[0].id;
+        setJourneyId(latestId);
+        onJourneyChange?.(latestId);
+      } else {
+        // 没有任何 journey，创建一个默认的
+        const jResult = await getOrCreateJourney();
+        if (cancelled) return;
+        if (jResult.journey) {
+          const j = jResult.journey;
+          const jId = j.id as string;
+          setJourneyId(jId);
+          setJourneys([{ id: jId, title: j.title as string, currentStage: (j.current_stage as string) ?? 'hub', completedStages: Array.isArray(j.completed_stages) ? j.completed_stages as string[] : [], createdAt: j.created_at as string }]);
+          onJourneyChange?.(jId);
+        }
       }
-      // 获取阶段状态
-      const status = await getJourneyHubStatus();
+    }
+    initHub();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 当 journeyId 确定后，查询该 journey 的 Hub 状态
+  useEffect(() => {
+    if (!journeyId) return;
+    const jId = journeyId;
+    let cancelled = false;
+    async function fetchStatus() {
+      const status = await getJourneyHubStatus(jId);
       if (cancelled) return;
       setHubStatus({
         diagnosisCompleted: status.diagnosisCompleted,
         gapFillingCompleted: status.gapFillingCompleted,
       });
     }
-    initHub();
+    fetchStatus();
     return () => { cancelled = true; };
-  }, []);
+  }, [journeyId]);
 
   // 构建动态卡片状态
   const stages: (Omit<JourneyStageCardProps, 'onSelect'>)[] = stageConfigs.map((cfg) => ({
@@ -127,18 +174,61 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
     setError(null);
   }, []);
 
+  // ── Journey 切换/新建/改名回调 ────────────────────────────────────────
+
+  const handleJourneySelect = useCallback((id: string) => {
+    setJourneyId(id);
+    onJourneyChange?.(id);
+    // 切换 journey 时重置诊断状态
+    resetDiagnosis();
+  }, [onJourneyChange, resetDiagnosis]);
+
+  const handleJourneyCreate = useCallback(async (title: string) => {
+    const result = await createJourney(title);
+    if (result.error) {
+      console.warn('[JourneyHub] Failed to create journey:', result.error);
+      return;
+    }
+    // 刷新列表
+    const listResult = await listUserJourneys();
+    if (listResult.journeys) {
+      setJourneys(listResult.journeys);
+    }
+    // 自动选中新 journey
+    if (result.journey) {
+      const newId = result.journey.id as string;
+      setJourneyId(newId);
+      onJourneyChange?.(newId);
+      resetDiagnosis();
+    }
+  }, [onJourneyChange, resetDiagnosis]);
+
+  const handleJourneyRename = useCallback(async (id: string, title: string) => {
+    const result = await renameJourney(id, title);
+    if (result.error) {
+      console.warn('[JourneyHub] Failed to rename journey:', result.error);
+      return;
+    }
+    // 乐观更新本地列表
+    setJourneys((prev) =>
+      prev.map((j) => (j.id === id ? { ...j, title } : j))
+    );
+  }, []);
+
   // 返回 Hub（包含清理）
   const handleBackToHub = useCallback(() => {
     resetDiagnosis();
     onBackToHub();
     // 返回 Hub 时刷新卡片状态
-    getJourneyHubStatus().then((status) => {
-      setHubStatus({
-        diagnosisCompleted: status.diagnosisCompleted,
-        gapFillingCompleted: status.gapFillingCompleted,
+    if (journeyId) {
+      getJourneyHubStatus(journeyId).then((status) => {
+        setHubStatus({
+          diagnosisCompleted: status.diagnosisCompleted,
+          gapFillingCompleted: status.gapFillingCompleted,
+        });
       });
-    });
-  }, [onBackToHub, resetDiagnosis]);
+    }
+  }, [onBackToHub, resetDiagnosis, journeyId]);
 
   // ── 诊断流程回调 ───────────────────────────────────────────────────────
 
@@ -159,6 +249,7 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
       stage: 'diagnosis',
       artifactType: 'job_snapshot',
       data: editedSnapshot as unknown as Record<string, unknown>,
+      journeyId: journeyId ?? undefined,
     });
 
     if (saveResult.error) {
@@ -184,6 +275,7 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
         stage: 'diagnosis',
         artifactType: 'diagnosis_report',
         data: result.report as unknown as Record<string, unknown>,
+        journeyId: journeyId ?? undefined,
       }).catch((err) => {
         console.warn('[JourneyHub] Failed to save diagnosis_report:', err);
       });
@@ -227,14 +319,18 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
 
   // 差距填补完成后刷新状态
   const handleGapFillingBack = useCallback(() => {
+    if (!journeyId) {
+      onBackToHub();
+      return;
+    }
     // 刷新 Hub 卡片状态
-    getJourneyHubStatus().then((status) => {
+    getJourneyHubStatus(journeyId).then((status) => {
       setHubStatus({
         diagnosisCompleted: status.diagnosisCompleted,
         gapFillingCompleted: status.gapFillingCompleted,
       });
       // 如果计划已保存，标记 gap_filling 完成
-      if (status.gapFillingCompleted && journeyId) {
+      if (status.gapFillingCompleted) {
         updateJourneyStage(journeyId, 'gap_filling').catch((err) => {
           console.warn('[JourneyHub] Failed to update journey stage:', err);
         });
@@ -406,6 +502,7 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
     if (currentStage === 'gap-filling') {
       return (
         <GapFillingView
+          journeyId={journeyId}
           onBack={handleGapFillingBack}
           onGoToDiagnosis={() => {
             resetDiagnosis();
@@ -469,7 +566,7 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
     <div className="h-full min-h-0 flex flex-col">
       {/* Header */}
       <div className="px-8 pt-7 pb-5 border-b border-[#CFCCC8] flex-shrink-0">
-        <div className="flex items-end justify-between gap-6">
+        <div className="flex items-start justify-between gap-6">
           <div>
             <p className="text-[10px] uppercase tracking-[0.3em] text-[#8B735B] font-medium">
               求职陪跑
@@ -480,6 +577,17 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
             <p className="mt-2 text-sm text-[#666666] leading-relaxed max-w-[760px]">
               从能力诊断到 Offer 谈判，每个阶段独立进入，灵活安排你的求职节奏
             </p>
+          </div>
+
+          {/* 右侧：陪跑记录选择器 */}
+          <div className="flex-shrink-0 pt-1">
+            <JourneySwitcher
+              journeys={journeys.map((j) => ({ id: j.id, title: j.title }))}
+              currentId={journeyId}
+              onSelect={handleJourneySelect}
+              onCreate={handleJourneyCreate}
+              onRename={handleJourneyRename}
+            />
           </div>
         </div>
       </div>

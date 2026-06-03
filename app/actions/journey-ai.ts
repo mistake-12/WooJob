@@ -86,7 +86,7 @@ export interface JourneyHubStatus {
   completedStages: string[];
 }
 
-export async function getJourneyHubStatus(): Promise<JourneyHubStatus> {
+export async function getJourneyHubStatus(journeyId?: string): Promise<JourneyHubStatus> {
   const empty: JourneyHubStatus = {
     journeyExists: false,
     diagnosisCompleted: false,
@@ -101,25 +101,37 @@ export async function getJourneyHubStatus(): Promise<JourneyHubStatus> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return empty;
 
-    // 查询 journey
-    const { data: journey } = await supabase
-      .from('ai_journeys')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+    // 查询 journey：优先使用传入的 journeyId，否则查最新一条
+    let journey: Record<string, unknown> | null = null;
+    if (journeyId) {
+      const { data: found } = await supabase
+        .from('ai_journeys')
+        .select('*')
+        .eq('id', journeyId)
+        .eq('user_id', user.id)
+        .single();
+      journey = found;
+    } else {
+      const { data: latest } = await supabase
+        .from('ai_journeys')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      journey = latest;
+    }
 
     if (!journey) return empty;
 
-    const journeyId = journey.id as string;
+    const jId = journey.id as string;
 
     // 并行查询两个阶段的 artifact
     const [diagResult, planResult] = await Promise.all([
       supabase
         .from('ai_journey_artifacts')
         .select('id')
-        .eq('journey_id', journeyId)
+        .eq('journey_id', jId)
         .eq('stage', 'diagnosis')
         .eq('artifact_type', 'diagnosis_report')
         .limit(1)
@@ -127,7 +139,7 @@ export async function getJourneyHubStatus(): Promise<JourneyHubStatus> {
       supabase
         .from('ai_journey_artifacts')
         .select('id')
-        .eq('journey_id', journeyId)
+        .eq('journey_id', jId)
         .eq('stage', 'gap_filling')
         .eq('artifact_type', 'gap_filling_plan')
         .limit(1)
@@ -155,15 +167,37 @@ export async function getJourneyHubStatus(): Promise<JourneyHubStatus> {
 }
 
 /**
- * 获取或创建当前用户的单一长期 Journey
- * MVP：每个用户只有一条 journey
+ * 获取或创建当前用户的 Journey
+ * 不传 title 时查最新一条，无则创建默认"求职陪跑"
+ * 传 title 时创建指定名称的新 journey
  */
-export async function getOrCreateJourney(): Promise<{ journey?: Record<string, unknown>; error?: string }> {
+export async function getOrCreateJourney(title?: string): Promise<{ journey?: Record<string, unknown>; error?: string }> {
   try {
     const supabase = await createServerSupabaseClient();
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { error: '未登录或会话已过期' };
+
+    // 如果指定了 title，直接创建新 journey
+    if (title) {
+      const { data: created, error: createError } = await supabase
+        .from('ai_journeys')
+        .insert({
+          user_id: user.id,
+          title,
+          current_stage: 'hub',
+          stages: [],
+          completed_stages: [],
+        })
+        .select('*')
+        .single();
+
+      if (createError) {
+        return { error: createError.message };
+      }
+
+      return { journey: created };
+    }
 
     // 先查现有 journey
     const { data: existing } = await supabase
@@ -178,7 +212,7 @@ export async function getOrCreateJourney(): Promise<{ journey?: Record<string, u
       return { journey: existing };
     }
 
-    // 不存在则创建
+    // 不存在则创建默认
     const { data: created, error: createError } = await supabase
       .from('ai_journeys')
       .insert({
@@ -199,6 +233,106 @@ export async function getOrCreateJourney(): Promise<{ journey?: Record<string, u
   } catch (err) {
     console.error('[getOrCreateJourney] Unexpected error:', err);
     return { error: '获取或创建旅程失败' };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 多 Journey 管理（P1 新增）
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface JourneyListItem {
+  id: string;
+  title: string;
+  currentStage: string;
+  completedStages: string[];
+  createdAt: string;
+}
+
+/**
+ * 列出当前用户的所有 journey
+ */
+export async function listUserJourneys(): Promise<{ journeys?: JourneyListItem[]; error?: string }> {
+  try {
+    const supabase = await createServerSupabaseClient();
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
+    const { data, error } = await supabase
+      .from('ai_journeys')
+      .select('id, title, current_stage, completed_stages, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) return { error: error.message };
+
+    const journeys: JourneyListItem[] = (data ?? []).map((row: Record<string, unknown>) => ({
+      id: row.id as string,
+      title: row.title as string,
+      currentStage: (row.current_stage as string) ?? 'hub',
+      completedStages: Array.isArray(row.completed_stages) ? row.completed_stages as string[] : [],
+      createdAt: row.created_at as string,
+    }));
+
+    return { journeys };
+  } catch (err) {
+    console.error('[listUserJourneys] Unexpected error:', err);
+    return { error: '获取陪跑记录列表失败' };
+  }
+}
+
+/**
+ * 创建指定名称的 journey
+ */
+export async function createJourney(title: string): Promise<{ journey?: Record<string, unknown>; error?: string }> {
+  if (!title || !title.trim()) {
+    return { error: '陪跑记录名称不能为空' };
+  }
+  return getOrCreateJourney(title.trim());
+}
+
+/**
+ * 重命名 journey
+ */
+export async function renameJourney(journeyId: string, title: string): Promise<{ error?: string }> {
+  if (!title || !title.trim()) {
+    return { error: '名称不能为空' };
+  }
+
+  try {
+    const supabase = await createServerSupabaseClient();
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
+    // 验证归属
+    const { data: journey, error: journeyError } = await supabase
+      .from('ai_journeys')
+      .select('id')
+      .eq('id', journeyId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (journeyError || !journey) {
+      return { error: '陪跑记录不存在或无权访问' };
+    }
+
+    const { error: updateError } = await supabase
+      .from('ai_journeys')
+      .update({
+        title: title.trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', journeyId);
+
+    if (updateError) {
+      return { error: updateError.message };
+    }
+
+    return {};
+  } catch (err) {
+    console.error('[renameJourney] Unexpected error:', err);
+    return { error: '重命名失败' };
   }
 }
 

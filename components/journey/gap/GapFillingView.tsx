@@ -13,9 +13,11 @@ type ViewStatus = 'loading' | 'no-diagnosis' | 'generating' | 'ready' | 'error';
 interface GapFillingViewProps {
   onBack: () => void;
   onGoToDiagnosis?: () => void;
+  /** 当前选中的 journeyId，用于数据隔离 */
+  journeyId?: string | null;
 }
 
-export default function GapFillingView({ onBack, onGoToDiagnosis }: GapFillingViewProps) {
+export default function GapFillingView({ onBack, onGoToDiagnosis, journeyId }: GapFillingViewProps) {
   const [status, setStatus] = useState<ViewStatus>('loading');
   const [plan, setPlan] = useState<GapFillingPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -29,8 +31,9 @@ export default function GapFillingView({ onBack, onGoToDiagnosis }: GapFillingVi
     initRef.current = true;
 
     async function init() {
+      const jId = journeyId ?? undefined;
       // 1. 先检查是否已有行动计划
-      const existingResult = await getExistingPlan();
+      const existingResult = await getExistingPlan(jId);
       if (existingResult.error) {
         setError(existingResult.error);
         setStatus('error');
@@ -44,7 +47,7 @@ export default function GapFillingView({ onBack, onGoToDiagnosis }: GapFillingVi
       }
 
       // 2. 检查是否有诊断报告
-      const diagResult = await getLatestDiagnosis();
+      const diagResult = await getLatestDiagnosis(jId);
       if (diagResult.error) {
         setError(diagResult.error);
         setStatus('error');
@@ -70,20 +73,21 @@ export default function GapFillingView({ onBack, onGoToDiagnosis }: GapFillingVi
       setPlan(genResult.plan);
       setStatus('ready');
 
-      savePlan(genResult.plan).catch((err) => {
+      savePlan(genResult.plan, jId).catch((err) => {
         console.warn('[GapFillingView] Failed to save plan:', err);
       });
     }
 
     init();
-  }, []);
+  }, [journeyId]);
 
   // 重新生成
   const handleRegenerate = useCallback(async () => {
     setStatus('generating');
     setError(null);
 
-    const diagResult = await getLatestDiagnosis();
+    const jId = journeyId ?? undefined;
+    const diagResult = await getLatestDiagnosis(jId);
     if (diagResult.error || !diagResult.report) {
       setError(diagResult.error ?? '无法获取诊断报告，请先完成诊断');
       setStatus('error');
@@ -101,10 +105,10 @@ export default function GapFillingView({ onBack, onGoToDiagnosis }: GapFillingVi
     setPlan(genResult.plan);
     setStatus('ready');
 
-    savePlan(genResult.plan).catch((err) => {
+    savePlan(genResult.plan, jId).catch((err) => {
       console.warn('[GapFillingView] Failed to save regenerated plan:', err);
     });
-  }, []);
+  }, [journeyId]);
 
   // 将行动项加入日程
   const handleAddToSchedule = useCallback(

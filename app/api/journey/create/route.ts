@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     .insert({
       user_id: userRes.user.id,
       title: '求职陪跑',
-      current_stage: 'onboarding',
+      current_stage: 'hub',
       stages: [],
       resume_file_id: resume?.id ?? null,
       resume_url: resume?.url ?? null,

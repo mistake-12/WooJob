@@ -34,6 +34,7 @@ export default function Home() {
   const getJobById = useJobStore((s) => s.getJobById);
   const [currentView, setCurrentView] = useState<'kanban' | 'agenda' | 'journey'>('kanban');
   const [currentJourneyStage, setCurrentJourneyStage] = useState<string | null>(null);
+  const [currentJourneyId, setCurrentJourneyId] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -385,6 +386,7 @@ export default function Home() {
                     currentStage={currentJourneyStage}
                     onStageSelect={(stageId) => setCurrentJourneyStage(stageId)}
                     onBackToHub={() => setCurrentJourneyStage(null)}
+                    onJourneyChange={(jid) => setCurrentJourneyId(jid)}
                   />
                 </div>
               ) : null}
@@ -400,6 +402,7 @@ export default function Home() {
           <AISidebar
             activeFeature={currentView === 'journey' ? 'journey' : 'ai'}
             journeyStage={currentView === 'journey' ? currentJourneyStage : null}
+            journeyId={currentView === 'journey' ? currentJourneyId : null}
           />
         </div>
       </div>

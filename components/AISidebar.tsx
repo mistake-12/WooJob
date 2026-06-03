@@ -28,10 +28,13 @@ const GUIDE_WELCOME = '你好！我是你的 AI 求职教练，会全程陪伴�
 export default function AISidebar({
   activeFeature = 'ai',
   journeyStage,
+  journeyId: propJourneyId,
 }: {
   activeFeature?: 'ai' | 'journey';
   /** 用户当前在 journey 中浏览的阶段（hub / diagnosis / gap_filling 等） */
   journeyStage?: string | null;
+  /** 外部传入的 journeyId（多 journey 支持），不传则自动获取 */
+  journeyId?: string | null;
 }) {
   const {
     aiConversations,
@@ -82,23 +85,32 @@ export default function AISidebar({
   // ── 初始化 Journey 模式：获取或创建 journey，加载消息 ──────────────
   useEffect(() => {
     if (activeFeature !== 'journey') return;
-    if (journeyInitDone) return;
 
     let cancelled = false;
 
     async function initJourney() {
       setJourneyError(null);
+      setJourneyMessages([]);
 
-      const journeyResult = await getOrCreateJourney();
-      if (cancelled) return;
+      let jId: string | null = null;
 
-      if (journeyResult.error || !journeyResult.journey) {
-        setJourneyError(journeyResult.error ?? '无法初始化旅程');
-        setJourneyInitDone(true);
-        return;
+      // 优先使用外部传入的 journeyId
+      if (propJourneyId) {
+        jId = propJourneyId;
+      } else {
+        // 降级：自动获取或创建
+        const journeyResult = await getOrCreateJourney();
+        if (cancelled) return;
+
+        if (journeyResult.error || !journeyResult.journey) {
+          setJourneyError(journeyResult.error ?? '无法初始化旅程');
+          setJourneyInitDone(true);
+          return;
+        }
+
+        jId = journeyResult.journey.id as string;
       }
 
-      const jId = journeyResult.journey.id as string;
       setJourneyId(jId);
 
       const msgResult = await getJourneyGuideMessages(jId);
@@ -118,7 +130,9 @@ export default function AISidebar({
     return () => {
       cancelled = true;
     };
-  }, [activeFeature, journeyInitDone]);
+    // 当 journeyId prop 变化时也重新初始化
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFeature, propJourneyId]);
 
   // 切换离开 journey 模式后重置初始化状态
   useEffect(() => {
