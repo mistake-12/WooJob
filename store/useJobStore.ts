@@ -344,7 +344,10 @@ export const useJobStore = create<JobStore>((set, get) => ({
       return null;
     }
     const job = dbJobToUiJob(result.job);
-    set((s) => ({ jobs: [job, ...s.jobs], isLoading: false }));
+    set((s) => ({
+      jobs: [job, ...s.jobs],
+      isLoading: false,
+    }));
     return job;
   },
 
@@ -531,11 +534,6 @@ export const useJobStore = create<JobStore>((set, get) => ({
     const prev = get().jobs;
     const job = prev.find((j) => j.id === id);
     if (!job) return;
-    // 模板卡片直接从 store 删除，不入回收站也不请求 DB
-    if (id.startsWith('template-')) {
-      set((s) => ({ jobs: s.jobs.filter((j) => j.id !== id) }));
-      return;
-    }
     // 乐观更新
     set((s) => ({
       jobs: s.jobs.filter((j) => j.id !== id),
