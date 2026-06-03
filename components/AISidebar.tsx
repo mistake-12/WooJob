@@ -5,9 +5,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useJobStore } from '@/store/useJobStore';
 import type { AIMessage, AIMessageAttachment, AIParsedData } from '@/types/database';
 import type { AIMode } from '@/app/actions/ai-helpers';
+import { getOrCreateJourney, getJourneyGuideMessages, sendJourneyGuideMessage } from '@/app/actions/journey-ai';
+import type { JourneyMessage } from '@/app/actions/journey-ai';
 import DraftPreviewCard from './DraftPreviewCard';
-
-import JourneyChat from './journey/JourneyChat';
 
 const MODES: { key: AIMode; label: string }[] = [
   { key: 'chat', label: '对话' },
@@ -22,7 +22,17 @@ const MODE_WELCOME: Record<AIMode, string> = {
   extract_task: '已切换至日程建档模式。请发送面试/笔试通知截图，我来帮您提取信息并加入日历。',
 };
 
-export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'ai' | 'journey' }) {
+/** Guide Agent 欢迎语 */
+const GUIDE_WELCOME = '你好！我是你的 AI 求职教练，会全程陪伴你的求职旅程。有什么问题随时问我~';
+
+export default function AISidebar({
+  activeFeature = 'ai',
+  journeyStage,
+}: {
+  activeFeature?: 'ai' | 'journey';
+  /** 用户当前在 journey 中浏览的阶段（hub / diagnosis / gap_filling 等） */
+  journeyStage?: string | null;
+}) {
   const {
     aiConversations,
     aiCurrentConversationId,
@@ -41,10 +51,10 @@ export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'a
 
   const [inputValue, setInputValue] = useState('');
   const [showConversationList, setShowConversationList] = useState(false);
-  const [localWelcome, setLocalWelcome] = useState<string | null>(null); // 本地欢迎语（切换模式时显示）
+  const [localWelcome, setLocalWelcome] = useState<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<AIMessageAttachment[]>([]);
   const [showImagePicker, setShowImagePicker] = useState(false);
-  const [isDraggingOver, setIsDraggingOver] = useState(false); // 是否拖拽中
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -52,20 +62,80 @@ export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'a
   const imagePickerRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
+  // ── Journey / Guide Agent 状态 ──────────────────────────────────────
+  const [journeyId, setJourneyId] = useState<string | null>(null);
+  const [journeyMessages, setJourneyMessages] = useState<JourneyMessage[]>([]);
+  const [journeyLoading, setJourneyLoading] = useState(false);
+  const [journeyError, setJourneyError] = useState<string | null>(null);
+  const [journeyInitDone, setJourneyInitDone] = useState(false);
+
   const currentConversation = aiConversations.find((c) => c.id === aiCurrentConversationId);
 
-  // 初始化：加载会话列表，如果有当前会话则加载消息
+  // ── 初始化 AI 模式：加载会话列表 ──────────────────────────────────
   useEffect(() => {
-    fetchConversations();
+    if (activeFeature !== 'journey') {
+      fetchConversations();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeFeature]);
+
+  // ── 初始化 Journey 模式：获取或创建 journey，加载消息 ──────────────
+  useEffect(() => {
+    if (activeFeature !== 'journey') return;
+    if (journeyInitDone) return;
+
+    let cancelled = false;
+
+    async function initJourney() {
+      setJourneyError(null);
+
+      const journeyResult = await getOrCreateJourney();
+      if (cancelled) return;
+
+      if (journeyResult.error || !journeyResult.journey) {
+        setJourneyError(journeyResult.error ?? '无法初始化旅程');
+        setJourneyInitDone(true);
+        return;
+      }
+
+      const jId = journeyResult.journey.id as string;
+      setJourneyId(jId);
+
+      const msgResult = await getJourneyGuideMessages(jId);
+      if (cancelled) return;
+
+      if (msgResult.error) {
+        setJourneyError(msgResult.error);
+      } else {
+        setJourneyMessages(msgResult.messages ?? []);
+      }
+
+      setJourneyInitDone(true);
+    }
+
+    initJourney();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeFeature, journeyInitDone]);
+
+  // 切换离开 journey 模式后重置初始化状态
+  useEffect(() => {
+    if (activeFeature !== 'journey') {
+      setJourneyInitDone(false);
+      setJourneyId(null);
+      setJourneyMessages([]);
+      setJourneyError(null);
+    }
+  }, [activeFeature]);
 
   // AI 回复后自动滚动到底部
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ block: 'end', behavior: 'smooth' });
     }
-  }, [aiMessages, localWelcome]);
+  }, [aiMessages, localWelcome, journeyMessages]);
 
   // 点击外部关闭会话列表和图片选择器
   useEffect(() => {
@@ -119,7 +189,6 @@ export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'a
     };
     reader.readAsDataURL(file);
 
-    // 重置 input 以允许再次选择同一张图片
     e.target.value = '';
     setShowImagePicker(false);
   }, []);
@@ -180,7 +249,6 @@ export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'a
   const handleDragLeave = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // 只有当离开整个 sidebar 时才隐藏
     if (sidebarRef.current && !sidebarRef.current.contains(e.relatedTarget as Node)) {
       setIsDraggingOver(false);
     }
@@ -198,7 +266,7 @@ export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'a
     }
   }, [extractImageFiles, addImagesToPending]);
 
-  // 处理粘贴事件（支持 Ctrl+V / Cmd+V 粘贴图片）
+  // 处理粘贴事件
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData.items;
     const imageFiles = extractImageFiles(items);
@@ -208,16 +276,15 @@ export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'a
     }
   }, [extractImageFiles, addImagesToPending]);
 
-  async function handleSend() {
+  // ── AI 模式发送消息 ────────────────────────────────────────────────
+  async function handleSendAI() {
     const trimmed = inputValue.trim();
-    // 图片必须有文字才能发送
     const hasText = trimmed.length > 0;
     const hasOnlyImages = !hasText && pendingAttachments.length > 0;
 
     if (!hasText || hasOnlyImages) return;
     if (aiIsLoading) return;
 
-    // 如果没有活跃会话，先创建一个
     let convId = aiCurrentConversationId;
     if (!convId) {
       convId = await startNewConversation();
@@ -231,10 +298,60 @@ export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'a
     inputRef.current?.focus();
   }
 
+  // ── Journey / Guide Agent 发送消息 ─────────────────────────────────
+  async function handleSendJourney() {
+    const trimmed = inputValue.trim();
+    const hasText = trimmed.length > 0;
+    const hasOnlyImages = !hasText && pendingAttachments.length > 0;
+
+    if (!hasText || hasOnlyImages) return;
+    if (journeyLoading || !journeyId) return;
+
+    setInputValue('');
+    setJourneyLoading(true);
+    setJourneyError(null);
+
+    // 乐观追加用户消息
+    const tempUserMsg: JourneyMessage = {
+      id: `temp-${Date.now()}`,
+      journeyId,
+      role: 'user',
+      content: trimmed,
+      attachments: pendingAttachments,
+      createdAt: new Date().toISOString(),
+    };
+    setJourneyMessages((prev) => [...prev, tempUserMsg]);
+    const sentAttachments = [...pendingAttachments];
+    setPendingAttachments([]);
+
+    const result = await sendJourneyGuideMessage({
+      journeyId,
+      stage: journeyStage ?? undefined,
+      content: trimmed,
+      attachments: sentAttachments,
+    });
+
+    if (result.error) {
+      setJourneyError(result.error);
+      setJourneyLoading(false);
+    } else if (result.message) {
+      setJourneyMessages((prev) => [...prev, result.message!]);
+      setJourneyLoading(false);
+    } else {
+      setJourneyLoading(false);
+    }
+
+    inputRef.current?.focus();
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      if (activeFeature === 'journey') {
+        handleSendJourney();
+      } else {
+        handleSendAI();
+      }
     }
   }
 
@@ -257,176 +374,222 @@ export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'a
         </div>
       )}
 
-      {/* ── 头部：会话切换 ─────────────────────────────────────────────── */}
+      {/* ── 头部：标题 + 会话切换 / 模式选择器 ─────────────────────────── */}
       <div className="p-4 border-b border-[#CFCCC8]" ref={listRef}>
-        {/* AI 标题 + 会话切换按钮 */}
-        <div className="flex items-center justify-between gap-2">
+        {activeFeature === 'journey' ? (
+          /* ── Journey / Guide Agent 头部 ──────────────────────────── */
           <div className="flex items-center gap-2 min-w-0">
             <Sparkles className="w-4 h-4 text-[#8B735B] flex-shrink-0" />
-            <span className="text-sm font-bold text-[#111111]">AI 助手</span>
+            <span className="text-sm font-bold text-[#111111]">AI 教练</span>
+            <span className="text-[10px] text-[#999999] uppercase tracking-[0.25em] ml-1">求职陪跑</span>
           </div>
+        ) : (
+          /* ── 普通 AI 头部（保持原有行为）────────────────────────── */
+          <>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Sparkles className="w-4 h-4 text-[#8B735B] flex-shrink-0" />
+                <span className="text-sm font-bold text-[#111111]">AI 助手</span>
+              </div>
 
-          {/* 会话切换下拉 */}
-          <div className="relative flex-shrink-0">
-            <button
-              onClick={() => setShowConversationList((v) => !v)}
-              className="flex items-center gap-1 px-2 py-1 text-xs text-[#666666] hover:bg-[#CFCCC8] rounded transition-colors max-w-[120px]"
-              title={currentConversation?.title ?? '切换对话'}
-            >
-              <MessageSquare className="w-3 h-3 flex-shrink-0" />
-              <span className="truncate">
-                {currentConversation?.title ?? '新对话'}
-              </span>
-              <ChevronDown className="w-3 h-3 flex-shrink-0" />
-            </button>
-
-            {/* 下拉菜单 */}
-            {showConversationList && (
-              <div className="absolute right-0 top-full mt-1 w-[220px] bg-white border border-[#CFCCC8] rounded-md shadow-lg z-50 overflow-hidden">
-                {/* 新建对话 */}
+              {/* 会话切换下拉 */}
+              <div className="relative flex-shrink-0">
                 <button
-                  onClick={handleNewConversation}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#8B735B] hover:bg-[#F5F2EE] transition-colors"
+                  onClick={() => setShowConversationList((v) => !v)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-[#666666] hover:bg-[#CFCCC8] rounded transition-colors max-w-[120px]"
+                  title={currentConversation?.title ?? '切换对话'}
                 >
-                  <Plus className="w-3 h-3" />
-                  新建对话
+                  <MessageSquare className="w-3 h-3 flex-shrink-0" />
+                  <span className="truncate">
+                    {currentConversation?.title ?? '新对话'}
+                  </span>
+                  <ChevronDown className="w-3 h-3 flex-shrink-0" />
                 </button>
 
-                {/* 分隔线 */}
-                {aiConversations.length > 0 && (
-                  <div className="border-t border-[#E8E5E0]" />
-                )}
-
-                {/* 对话列表 */}
-                <div className="max-h-[200px] overflow-y-auto">
-                  {aiConversations.length === 0 && (
-                    <p className="px-3 py-2 text-xs text-[#999999]">暂无对话记录</p>
-                  )}
-                  {aiConversations.map((conv) => (
-                    <div
-                      key={conv.id}
-                      onClick={() => handleSwitchConversation(conv.id)}
-                      className={`group flex items-center gap-1 px-3 py-2 cursor-pointer hover:bg-[#F5F2EE] transition-colors ${
-                        conv.id === aiCurrentConversationId ? 'bg-[#F0EDE8]' : ''
-                      }`}
+                {/* 下拉菜单 */}
+                {showConversationList && (
+                  <div className="absolute right-0 top-full mt-1 w-[220px] bg-white border border-[#CFCCC8] rounded-md shadow-lg z-50 overflow-hidden">
+                    <button
+                      onClick={handleNewConversation}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#8B735B] hover:bg-[#F5F2EE] transition-colors"
                     >
-                      <MessageSquare className="w-3 h-3 text-[#999999] flex-shrink-0" />
-                      <span className="flex-1 text-xs text-[#333333] truncate">
-                        {conv.title}
-                      </span>
-                      <button
-                        onClick={(e) => handleDeleteConversation(e, conv.id)}
-                        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-[#E6E3DF] rounded transition-all"
-                        title="删除对话"
-                      >
-                        <Trash2 className="w-3 h-3 text-[#999999]" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+                      <Plus className="w-3 h-3" />
+                      新建对话
+                    </button>
 
-        {/* 模式选择器 */}
-        <div className="flex gap-1 mt-2">
-          {MODES.map((m) => (
-            <button
-              key={m.key}
-              onClick={() => handleModeChange(m.key)}
-              className={`flex-1 py-1 px-2 text-xs rounded transition-colors ${
-                aiMode === m.key
-                  ? 'bg-[#8E7E6E] text-white font-medium shadow-sm'
-                  : 'bg-[#E8E5E0] text-[#666666] hover:bg-[#DDD9D4]'
-              }`}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
+                    {aiConversations.length > 0 && (
+                      <div className="border-t border-[#E8E5E0]" />
+                    )}
+
+                    <div className="max-h-[200px] overflow-y-auto">
+                      {aiConversations.length === 0 && (
+                        <p className="px-3 py-2 text-xs text-[#999999]">暂无对话记录</p>
+                      )}
+                      {aiConversations.map((conv) => (
+                        <div
+                          key={conv.id}
+                          onClick={() => handleSwitchConversation(conv.id)}
+                          className={`group flex items-center gap-1 px-3 py-2 cursor-pointer hover:bg-[#F5F2EE] transition-colors ${
+                            conv.id === aiCurrentConversationId ? 'bg-[#F0EDE8]' : ''
+                          }`}
+                        >
+                          <MessageSquare className="w-3 h-3 text-[#999999] flex-shrink-0" />
+                          <span className="flex-1 text-xs text-[#333333] truncate">
+                            {conv.title}
+                          </span>
+                          <button
+                            onClick={(e) => handleDeleteConversation(e, conv.id)}
+                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-[#E6E3DF] rounded transition-all"
+                            title="删除对话"
+                          >
+                            <Trash2 className="w-3 h-3 text-[#999999]" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* 模式选择器（AI 模式专有） */}
+            <div className="flex gap-1 mt-2">
+              {MODES.map((m) => (
+                <button
+                  key={m.key}
+                  onClick={() => handleModeChange(m.key)}
+                  className={`flex-1 py-1 px-2 text-xs rounded transition-colors ${
+                    aiMode === m.key
+                      ? 'bg-[#8E7E6E] text-white font-medium shadow-sm'
+                      : 'bg-[#E8E5E0] text-[#666666] hover:bg-[#DDD9D4]'
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* ── 内容区域：AI 对话 / Journey 入口 ───────────────────────────── */}
+      {/* ── 内容区域：AI 对话 / Journey Guide Agent 对话 ──────────────── */}
       {activeFeature === 'journey' ? (
-        <JourneyChat />
+        /* ── Journey Guide Agent 消息区 ────────────────────────────── */
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 bg-[#E8E5E0]">
+          {journeyMessages.length === 0 && !journeyLoading && !journeyError ? (
+            <GuideMessageBubble
+              message={{
+                id: 'guide-welcome',
+                role: 'assistant',
+                content: GUIDE_WELCOME,
+                attachments: [],
+              }}
+            />
+          ) : (
+            <>
+              {journeyMessages.map((jm) => (
+                <GuideMessageBubble key={jm.id} message={jm} />
+              ))}
+
+              {/* 加载中占位 */}
+              {journeyLoading && (
+                <div className="flex items-start gap-2 pl-2 border-l-2 border-[#8B735B]">
+                  <Bot className="w-4 h-4 text-[#8B735B] mt-1 flex-shrink-0 animate-pulse" />
+                  <div className="flex-1">
+                    <p className="text-xs font-bold text-[#8B735B] mb-1">AI 教练</p>
+                    <div className="flex gap-1">
+                      <div className="w-1.5 h-1.5 bg-[#8B735B] rounded-full animate-bounce" />
+                      <div className="w-1.5 h-1.5 bg-[#8B735B] rounded-full animate-bounce [animation-delay:0.15s]" />
+                      <div className="w-1.5 h-1.5 bg-[#8B735B] rounded-full animate-bounce [animation-delay:0.3s]" />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 错误提示 */}
+              {journeyError && (
+                <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+                  {journeyError}
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </>
+          )}
+
+          {journeyMessages.length > 0 && <div ref={messagesEndRef} />}
+        </div>
       ) : (
+        /* ── 普通 AI 消息区（保持原有行为）────────────────────────── */
         <>
-      {/* ── 消息区域 ───────────────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 bg-[#E8E5E0]">
-        {/* 无消息时显示欢迎气泡（会话自动创建，组件初始化即可输入） */}
-        {aiMessages.length === 0 && !aiIsLoading && !localWelcome ? (
-          <MessageBubble
-            message={{
-              id: 'welcome',
-              conversationId: '',
-              role: 'assistant',
-              content: aiWelcomeMessage || MODE_WELCOME.chat,
-              attachments: [],
-              extraData: null,
-              createdAt: new Date().toISOString(),
-            }}
-          />
-        ) : (
-          <>
-            {/* 本地欢迎语（切换模式时显示） */}
-            {localWelcome && (
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 bg-[#E8E5E0]">
+            {aiMessages.length === 0 && !aiIsLoading && !localWelcome ? (
               <MessageBubble
                 message={{
-                  id: 'local-welcome',
+                  id: 'welcome',
                   conversationId: '',
                   role: 'assistant',
-                  content: localWelcome,
+                  content: aiWelcomeMessage || MODE_WELCOME.chat,
                   attachments: [],
                   extraData: null,
                   createdAt: new Date().toISOString(),
                 }}
               />
-            )}
+            ) : (
+              <>
+                {localWelcome && (
+                  <MessageBubble
+                    message={{
+                      id: 'local-welcome',
+                      conversationId: '',
+                      role: 'assistant',
+                      content: localWelcome,
+                      attachments: [],
+                      extraData: null,
+                      createdAt: new Date().toISOString(),
+                    }}
+                  />
+                )}
 
-            {aiMessages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
-            ))}
+                {aiMessages.map((msg) => (
+                  <MessageBubble key={msg.id} message={msg} />
+                ))}
 
-            {/* 加载中占位 */}
-            {aiIsLoading && (
-              <div className="flex items-start gap-2 pl-2 border-l-2 border-[#8E7E6E]">
-                <Bot className="w-4 h-4 text-[#8E7E6E] mt-1 flex-shrink-0 animate-pulse" />
-                <div className="flex-1">
-                  <p className="text-xs font-bold text-[#8E7E6E] mb-1">AI 助手</p>
-                  <div className="flex gap-1">
-                    <div className="w-1.5 h-1.5 bg-[#8E7E6E] rounded-full animate-bounce" />
-                    <div className="w-1.5 h-1.5 bg-[#8E7E6E] rounded-full animate-bounce [animation-delay:0.15s]" />
-                    <div className="w-1.5 h-1.5 bg-[#8E7E6E] rounded-full animate-bounce [animation-delay:0.3s]" />
+                {aiIsLoading && (
+                  <div className="flex items-start gap-2 pl-2 border-l-2 border-[#8E7E6E]">
+                    <Bot className="w-4 h-4 text-[#8E7E6E] mt-1 flex-shrink-0 animate-pulse" />
+                    <div className="flex-1">
+                      <p className="text-xs font-bold text-[#8E7E6E] mb-1">AI 助手</p>
+                      <div className="flex gap-1">
+                        <div className="w-1.5 h-1.5 bg-[#8E7E6E] rounded-full animate-bounce" />
+                        <div className="w-1.5 h-1.5 bg-[#8E7E6E] rounded-full animate-bounce [animation-delay:0.15s]" />
+                        <div className="w-1.5 h-1.5 bg-[#8E7E6E] rounded-full animate-bounce [animation-delay:0.3s]" />
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                )}
+
+                {aiError && (
+                  <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
+                    {aiError}
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
+              </>
             )}
 
-            {/* 错误提示 */}
-            {aiError && (
-              <div className="p-2 bg-red-50 border border-red-200 rounded text-xs text-red-600">
-                {aiError}
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </>
-        )}
-
-        {/* 有消息但未发过时，显示欢迎气泡滚动锚点 */}
-        {aiMessages.length > 0 && <div ref={messagesEndRef} />}
-      </div>
+            {aiMessages.length > 0 && <div ref={messagesEndRef} />}
+          </div>
         </>
       )}
 
-      {/* ── 输入框（AI 模式下，journey 模式的输入已内置在 JourneyChat 中） */}
-      {activeFeature !== 'journey' && (
-        <div
-          className="p-4 border-t border-[#CFCCC8]"
-          onPaste={handlePaste}
-        >
-          {/* 待发送图片预览 */}
+      {/* ── 输入框（两种模式共用结构，发送逻辑不同）─────────────────── */}
+      <div
+        className="p-4 border-t border-[#CFCCC8]"
+        onPaste={handlePaste}
+      >
+        {/* 待发送图片预览 */}
         {pendingAttachments.length > 0 && (
           <div className="mb-2 flex gap-2 flex-wrap">
             {pendingAttachments.map((att, i) => (
@@ -458,7 +621,6 @@ export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'a
               <Image className="w-5 h-5 text-[#8B735B]" />
             </button>
 
-            {/* 隐藏的文件输入 */}
             <input
               ref={fileInputRef}
               type="file"
@@ -467,7 +629,6 @@ export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'a
               className="hidden"
             />
 
-            {/* 图片选择提示 */}
             {showImagePicker && (
               <div className="absolute bottom-full left-0 mb-2 w-40 bg-white border border-[#CFCCC8] rounded-md shadow-lg z-50 overflow-hidden">
                 <button
@@ -488,20 +649,26 @@ export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'a
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={
-              aiMode === 'extract_job'
-                ? '粘贴岗位描述，上传 JD 截图，或 Ctrl+V 粘贴图片...'
-                : aiMode === 'extract_task'
-                  ? '描述任务，上传通知截图，或 Ctrl+V 粘贴图片...'
-                  : '向 AI 助手提问，拖拽或粘贴图片上传...'
+              activeFeature === 'journey'
+                ? '向 AI 教练提问，例如：这个阶段是做什么的？'
+                : aiMode === 'extract_job'
+                  ? '粘贴岗位描述，上传 JD 截图，或 Ctrl+V 粘贴图片...'
+                  : aiMode === 'extract_task'
+                    ? '描述任务，上传通知截图，或 Ctrl+V 粘贴图片...'
+                    : '向 AI 助手提问，拖拽或粘贴图片上传...'
             }
-            disabled={aiIsLoading}
+            disabled={activeFeature === 'journey' ? journeyLoading : aiIsLoading}
             rows={1}
             className="flex-1 px-4 py-2 text-sm bg-white border border-[#E8E5E0] rounded-md focus:outline-none focus:ring-2 focus:ring-[#8E7E6E] focus:border-transparent resize-none disabled:bg-[#F5F2EE] disabled:cursor-not-allowed"
             style={{ minHeight: '40px', maxHeight: '120px' }}
           />
           <button
-            onClick={handleSend}
-            disabled={aiIsLoading || !inputValue.trim()}
+            onClick={activeFeature === 'journey' ? handleSendJourney : handleSendAI}
+            disabled={
+              activeFeature === 'journey'
+                ? journeyLoading || !inputValue.trim()
+                : aiIsLoading || !inputValue.trim()
+            }
             title={
               pendingAttachments.length > 0 && !inputValue.trim()
                 ? '请输入文字说明后再发送'
@@ -520,12 +687,11 @@ export default function AISidebar({ activeFeature = 'ai' }: { activeFeature?: 'a
           </p>
         )}
       </div>
-      )}
     </div>
   );
 }
 
-/** 单条消息气泡 */
+/** 普通 AI 消息气泡（保持原有逻辑不变） */
 function MessageBubble({ message }: { message: AIMessage }) {
   if (message.role === 'user') {
     return (
@@ -536,7 +702,6 @@ function MessageBubble({ message }: { message: AIMessage }) {
           <p className="text-sm text-[#111111] whitespace-pre-wrap break-words">
             {message.content}
           </p>
-          {/* 图片附件预览 */}
           {message.attachments.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-2">
               {message.attachments.map((att, i) => (
@@ -556,12 +721,10 @@ function MessageBubble({ message }: { message: AIMessage }) {
     );
   }
 
-  // AI 消息：尝试解析其中的结构化 JSON
   const { textContent, parsedData } = parseAIMessage(message);
 
   return (
     <div className="flex flex-col gap-3">
-      {/* 纯文本回复 */}
       {textContent && (
         <div className="flex items-start gap-2 pl-2 border-l-2 border-[#8E7E6E]">
           <Bot className="w-4 h-4 text-[#8E7E6E] mt-1 flex-shrink-0" />
@@ -574,10 +737,52 @@ function MessageBubble({ message }: { message: AIMessage }) {
         </div>
       )}
 
-      {/* 结构化数据预览卡片 */}
       {parsedData && (
         <DraftPreviewCard parsedData={parsedData} />
       )}
+    </div>
+  );
+}
+
+/** Guide Agent 消息气泡（简洁版，不解析结构化数据） */
+function GuideMessageBubble({ message }: { message: { id: string; role: 'user' | 'assistant'; content: string; attachments: AIMessageAttachment[] } }) {
+  if (message.role === 'user') {
+    return (
+      <div className="flex items-start gap-2">
+        <User className="w-4 h-4 text-[#666666] mt-1 flex-shrink-0" />
+        <div className="flex-1">
+          <p className="text-xs font-bold text-[#111111] mb-1">你</p>
+          <p className="text-sm text-[#111111] whitespace-pre-wrap break-words">
+            {message.content}
+          </p>
+          {message.attachments.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {message.attachments.map((att, i) => (
+                att.type === 'image_url' ? (
+                  <img
+                    key={i}
+                    src={att.url}
+                    alt="附件图片"
+                    className="w-20 h-20 object-cover rounded border border-[#CFCCC8]"
+                  />
+                ) : null
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-2 pl-2 border-l-2 border-[#8B735B]">
+      <Bot className="w-4 h-4 text-[#8B735B] mt-1 flex-shrink-0" />
+      <div className="flex-1">
+        <p className="text-xs font-bold text-[#8B735B] mb-1">AI 教练</p>
+        <p className="text-sm text-[#111111] whitespace-pre-wrap break-words">
+          {message.content}
+        </p>
+      </div>
     </div>
   );
 }
@@ -586,7 +791,6 @@ function MessageBubble({ message }: { message: AIMessage }) {
  * 解析 AI 消息内容，提取纯文本和结构化 JSON
  */
 function parseAIMessage(message: AIMessage): { textContent: string | null; parsedData: AIParsedData | null } {
-  // 优先使用 extraData（后端解析好的）
   if (message.extraData) {
     return {
       textContent: null,
@@ -597,7 +801,6 @@ function parseAIMessage(message: AIMessage): { textContent: string | null; parse
   const content = message.content;
   if (!content) return { textContent: null, parsedData: null };
 
-  // 尝试匹配 ```json ... ``` 代码块
   const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
 
   if (codeBlockMatch) {
@@ -605,7 +808,6 @@ function parseAIMessage(message: AIMessage): { textContent: string | null; parse
     try {
       const parsed = JSON.parse(jsonStr);
 
-      // 提取代码块之外的文本
       const textParts = content.split(/```(?:json)?[\s\S]*?```/);
       const textContent = textParts
         .map((t) => t.trim())

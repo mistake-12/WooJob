@@ -397,7 +397,10 @@ export default function Home() {
           </div>
 
           {/* 右侧 AI 侧边栏 */}
-          <AISidebar activeFeature="ai" />
+          <AISidebar
+            activeFeature={currentView === 'journey' ? 'journey' : 'ai'}
+            journeyStage={currentView === 'journey' ? currentJourneyStage : null}
+          />
         </div>
       </div>
 
