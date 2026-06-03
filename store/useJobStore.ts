@@ -349,8 +349,6 @@ export const useJobStore = create<JobStore>((set, get) => ({
       isLoading: false,
     }));
     return job;
-    set((s) => ({ jobs: [job, ...s.jobs], isLoading: false }));
-    return job;
   },
 
   updateJob: async (id, input) => {
@@ -359,7 +357,6 @@ export const useJobStore = create<JobStore>((set, get) => ({
     if (!existing) return null;
 
     // Step 1: 立刻更新 UI（乐观更新）
-    // UpdateJobInput 中多个字段为 string|null，需全部映射为 Job 的 string | undefined
     const optimisticJob: Job = {
       ...existing,
       ...input,
@@ -379,6 +376,34 @@ export const useJobStore = create<JobStore>((set, get) => ({
     set((s) => ({
       jobs: s.jobs.map((j) => (j.id === id ? optimisticJob : j)),
     }));
+
+    // 模板卡片 → 创建新记录到 DB（模板 id 在 DB 中不存在，不能 UPDATE）
+    if (id.startsWith('template-')) {
+      const createResult = await jobsActions.createJob({
+        company: optimisticJob.company,
+        title: optimisticJob.title,
+        stage: optimisticJob.stage,
+        deadline: optimisticJob.deadline || undefined,
+        keyTime: optimisticJob.time || undefined,
+        website: optimisticJob.website,
+        description: optimisticJob.description,
+        tags: {
+          referral: optimisticJob.tags.referral,
+          round: optimisticJob.tags.round,
+          interviewTime: optimisticJob.tags.interviewTime,
+          remaining: optimisticJob.tags.remaining,
+        },
+      });
+      if (createResult.error || !createResult.job) {
+        set({ jobs: prev, error: createResult.error ?? '保存失败' });
+        return null;
+      }
+      const job = dbJobToUiJob(createResult.job);
+      set((s) => ({
+        jobs: s.jobs.map((j) => (j.id === id ? job : j)),
+      }));
+      return job;
+    }
 
     // Step 2: 后台同步到 DB
     const result = await jobsActions.updateJob(id, input);
