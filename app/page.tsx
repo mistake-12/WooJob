@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import confetti from 'canvas-confetti';
 import { JobStage } from '@/types';
@@ -10,6 +9,7 @@ import KanbanColumn from '@/components/KanbanColumn';
 import BottomShelf from '@/components/BottomShelf';
 import AISidebar from '@/components/AISidebar';
 import AgendaView from '@/components/AgendaView';
+import JourneyHub from '@/components/journey/JourneyHub';
 import SideDrawer from '@/components/SideDrawer';
 import TaskDetails from '@/components/TaskDetails';
 import { Briefcase, Plus, Trash2, Github } from 'lucide-react';
@@ -20,7 +20,6 @@ import { signOutClient } from '@/app/actions/signOutClient';
 const stages: JobStage[] = ['待投递', '已投递', '笔试中', '面试中', 'Offer', '已结束'];
 
 export default function Home() {
-  const router = useRouter();
   const jobs = useJobStore((s) => s.jobs);
   const trashedJobs = useJobStore((s) => s.trashedJobs);
   const updateJobStage = useJobStore((s) => s.updateJobStage);
@@ -33,7 +32,8 @@ export default function Home() {
   const fetchTrashedJobs = useJobStore((s) => s.fetchTrashedJobs);
   const fetchTasks = useJobStore((s) => s.fetchTasks);
   const getJobById = useJobStore((s) => s.getJobById);
-  const [currentView, setCurrentView] = useState<'kanban' | 'agenda'>('kanban');
+  const [currentView, setCurrentView] = useState<'kanban' | 'agenda' | 'journey'>('kanban');
+  const [currentJourneyStage, setCurrentJourneyStage] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [isShaking, setIsShaking] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -245,8 +245,12 @@ export default function Home() {
                   日程
                 </button>
                 <button
-                  onClick={() => router.push('/journey')}
-                  className="px-4 py-1.5 rounded-full text-sm transition-colors bg-transparent text-gray-500 hover:text-gray-800"
+                  onClick={() => setCurrentView('journey')}
+                  className={`px-4 py-1.5 rounded-full text-sm transition-colors ${
+                    currentView === 'journey'
+                      ? 'bg-white text-gray-900 shadow-sm font-medium'
+                      : 'bg-transparent text-gray-500 hover:text-gray-800'
+                  }`}
                 >
                   求职陪跑
                 </button>
@@ -375,6 +379,14 @@ export default function Home() {
                 </div>
               ) : currentView === 'agenda' ? (
                 <AgendaView />
+              ) : currentView === 'journey' ? (
+                <div className="flex-1 min-h-0 overflow-hidden">
+                  <JourneyHub
+                    currentStage={currentJourneyStage}
+                    onStageSelect={(stageId) => setCurrentJourneyStage(stageId)}
+                    onBackToHub={() => setCurrentJourneyStage(null)}
+                  />
+                </div>
               ) : null}
             </div>
 

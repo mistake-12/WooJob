@@ -1,7 +1,6 @@
 'use client';
 
 import { LucideIcon } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 
 export type JourneyStageStatus = 'available' | 'coming_soon';
 
@@ -11,22 +10,22 @@ export interface JourneyStageCardProps {
   description: string;
   icon: LucideIcon;
   status: JourneyStageStatus;
-  route?: string;
+  onSelect?: (id: string) => void;
 }
 
 export default function JourneyStageCard({
+  id,
   title,
   description,
   icon: Icon,
   status,
-  route,
+  onSelect,
 }: JourneyStageCardProps) {
-  const router = useRouter();
   const isAvailable = status === 'available';
 
   const handleClick = () => {
-    if (isAvailable && route) {
-      router.push(route);
+    if (isAvailable && onSelect) {
+      onSelect(id);
     }
   };
 
