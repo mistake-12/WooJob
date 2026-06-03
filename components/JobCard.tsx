@@ -13,7 +13,6 @@ interface JobCardProps {
 
 export default function JobCard({ job, index, onOpen, onTrash }: JobCardProps) {
   const isEnded = job.stage === '已结束';
-  const isTemplate = job.id.startsWith('template-');
 
   /* 计算进度百分比：基础阶段 + 面试中轮次细分 */
   function calculateProgress(stage: string, round?: string): number {
@@ -95,7 +94,7 @@ export default function JobCard({ job, index, onOpen, onTrash }: JobCardProps) {
               <h3 className="text-sm font-bold text-[#111111] leading-tight flex-1">
                 {job.title}
               </h3>
-              {(isEnded || isTemplate) && onTrash ? (
+              {isEnded && onTrash ? (
                 <button
                   onPointerDownCapture={(e) => {
                     e.stopPropagation();
