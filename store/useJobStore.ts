@@ -80,6 +80,8 @@ interface JobStore {
   tasks: Task[];
   stats: Stats;
   isLoading: boolean;
+  /** 首次数据加载完成前的全局 loading 标记（用于控制 page.tsx 的 skeleton） */
+  isInitialLoading: boolean;
   error: string | null;
   /** 正在按月加载的月份，避免重复请求导致闪烁 */
   loadingMonth: string | null;
@@ -248,6 +250,7 @@ export const useJobStore = create<JobStore>((set, get) => ({
   tasks: [],
   stats: { totalJobs: 0, trashedCount: 0, successRate: '0%', status: '求职中' },
   isLoading: false,
+  isInitialLoading: true,
   error: null,
   loadingMonth: null,
 
@@ -259,6 +262,7 @@ export const useJobStore = create<JobStore>((set, get) => ({
       tasks: [],
       stats: { totalJobs: 0, trashedCount: 0, successRate: '0%', status: '求职中' },
       isLoading: false,
+      isInitialLoading: true,
       error: null,
       loadingMonth: null,
       // AI 状态全部重置，防止新用户看到旧用户的对话记录
@@ -510,9 +514,12 @@ export const useJobStore = create<JobStore>((set, get) => ({
     set({ loadingMonth: null });
     if (result.error) return;
     const newTasks = (result.tasks ?? []).map(dbTaskToUiTask);
-    if (month) {
-      set((s) => {
-        const existingIds = new Set(s.tasks.map((t) => t.id));
+    // 始终走 merge 路径：保留本地新建但尚未同步的任务，用服务端返回的任务替换已有
+    set((s) => {
+      const newIds = new Set(newTasks.map((t) => t.id));
+      const existingIds = new Set(s.tasks.map((t) => t.id));
+      if (month) {
+        // 有 month 参数：保留其他月份的任务 + 合并本月新任务
         const merged = [
           ...s.tasks.filter(
             (t) => normalizeToISODate(t.date).slice(0, 7) !== targetMonth
@@ -520,10 +527,12 @@ export const useJobStore = create<JobStore>((set, get) => ({
           ...newTasks.filter((t) => !existingIds.has(t.id)),
         ];
         return { tasks: merged };
-      });
-    } else {
-      set({ tasks: newTasks });
-    }
+      } else {
+        // 无 month 参数：保留本地新建任务（id 不在服务端返回中），其余用服务端数据替换
+        const keptLocal = s.tasks.filter((t) => !newIds.has(t.id));
+        return { tasks: [...keptLocal, ...newTasks] };
+      }
+    });
   },
 
   createTask: async (input) => {

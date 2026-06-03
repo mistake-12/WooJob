@@ -19,6 +19,20 @@ import { signOutClient } from '@/app/actions/signOutClient';
 
 const stages: JobStage[] = ['待投递', '已投递', '笔试中', '面试中', 'Offer', '已结束'];
 
+/** 空状态模板卡片 —— 首次使用时展示在看板中，让用户快速理解产品价值 */
+const TEMPLATE_JOBS = [
+  { id: 'template-1', company: '字节跳动', title: '高级产品经理', stage: '待投递' as JobStage, deadline: '2026-06-15', tags: { referral: '有' as const }, progress: 10, position: 0, time: '' },
+  { id: 'template-2', company: '腾讯', title: 'AI 产品经理', stage: '已投递' as JobStage, deadline: '2026-06-10', tags: {}, progress: 30, position: 0, time: '' },
+  { id: 'template-3', company: '美团', title: '策略产品经理', stage: '面试中' as JobStage, deadline: '2026-06-08', tags: { round: '技术二面' }, progress: 74, position: 0, time: '' },
+  { id: 'template-4', company: '阿里巴巴', title: '数据产品经理', stage: 'Offer' as JobStage, deadline: '2026-06-01', tags: {}, progress: 100, position: 0, time: '' },
+];
+
+/** 将模板卡片按 stage 分组 */
+const templateJobsByStage = stages.reduce((acc, stage) => {
+  acc[stage] = TEMPLATE_JOBS.filter((job) => job.stage === stage);
+  return acc;
+}, {} as Record<JobStage, typeof TEMPLATE_JOBS>);
+
 export default function Home() {
   const jobs = useJobStore((s) => s.jobs);
   const trashedJobs = useJobStore((s) => s.trashedJobs);
@@ -108,12 +122,21 @@ export default function Home() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isProfileMenuOpen]);
 
-  // 初始化：加载数据（Jobs/Trash/Tasks 全在这里统一加载，避免视图切换时竞态）
+  // 初始化：加载数据（仅 mount 时执行一次，避免视图切换时重复请求）
+  const initialLoadDone = useRef(false);
+  const isInitialLoading = useJobStore((s) => s.isInitialLoading);
   useEffect(() => {
-    fetchJobs();
-    fetchTrashedJobs();
-    fetchTasks();
-  }, [fetchJobs, fetchTrashedJobs, fetchTasks]);
+    if (initialLoadDone.current) return;
+    initialLoadDone.current = true;
+    Promise.all([
+      fetchJobs(),
+      fetchTrashedJobs(),
+      fetchTasks(),
+    ]).finally(() => {
+      useJobStore.setState({ isInitialLoading: false });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 按 stage 分组，每组内按 position 排序
   const jobsByStage = stages.reduce((acc, stage) => {
@@ -354,6 +377,32 @@ export default function Home() {
             {/* 中间内容容器：占满剩余高度 */}
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               {currentView === 'kanban' ? (
+                isInitialLoading ? (
+                  /* 加载骨架屏：与看板布局一致的 6 列灰色占位 */
+                  <div className="flex gap-0 flex-1 min-h-0 overflow-x-auto overflow-y-hidden items-stretch px-8 pt-0">
+                    {stages.map((stage) => (
+                      <div
+                        key={stage}
+                        className="flex flex-col flex-shrink-0 h-full w-[260px] border-r border-[#CFCCC8]"
+                      >
+                        {/* 列标题占位 */}
+                        <div className="px-3 pt-4 pb-4 border-b border-[#CFCCC8] shrink-0">
+                          <div className="h-5 bg-[#E0DCD1] rounded w-16 animate-pulse" />
+                        </div>
+                        {/* 卡片占位 */}
+                        <div className="flex-1 min-h-0 px-3 pt-3 flex flex-col gap-3 overflow-y-auto">
+                          {[88, 104, 96].map((h, i) => (
+                            <div
+                              key={i}
+                              className="bg-[#E8E5DF] rounded-md p-3 animate-pulse"
+                              style={{ height: `${h}px` }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
                 <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
                   <DragDropContext onDragEnd={onDragEnd}>
                     <div className="flex gap-0 flex-1 min-h-0 overflow-x-auto overflow-y-hidden items-stretch px-8 pt-0">
@@ -362,6 +411,7 @@ export default function Home() {
                           key={stage}
                           title={stage}
                           jobs={jobsByStage[stage]}
+                          templateJobs={totalJobs === 0 ? templateJobsByStage[stage] : undefined}
                           onOpenJob={handleOpenJob}
                           onAddJob={handleAddJob}
                           onTrashJob={(job) => trashJob(job.id)}
@@ -378,6 +428,7 @@ export default function Home() {
                     <Plus className="w-5 h-5 text-[#8E7E6E]" />
                   </button>
                 </div>
+                )
               ) : currentView === 'agenda' ? (
                 <AgendaView />
               ) : currentView === 'journey' ? (

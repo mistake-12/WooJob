@@ -365,11 +365,24 @@ function dayToDateLabel(day: number | null, calYear: number, calMonth: number): 
 };
 
 export default function AgendaView({}: AgendaViewProps) {
-  const tasks = useJobStore((s) => s.tasks);
+  const rawTasks = useJobStore((s) => s.tasks);
   const updateTask = useJobStore((s) => s.updateTask);
   const createTask = useJobStore((s) => s.createTask);
   const fetchTasks = useJobStore((s) => s.fetchTasks);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+
+  /** 过滤已过期的面试/笔试任务（已完成任务、今天及未来的任务、非面试/笔试标签不过滤） */
+  const tasks = (() => {
+    const todayISO = formatDateToISO(new Date());
+    return rawTasks.filter((task) => {
+      if (task.isCompleted) return true;
+      if (task.tag === '面试' || task.tag === '笔试') {
+        const taskISO = normalizeDateLabel(task.date);
+        return taskISO >= todayISO;
+      }
+      return true;
+    });
+  })();
 
   /** 当前筛选条件：日期筛选 | 标签筛选 | 无筛选（全不选） */
   const [selectedFilter, setSelectedFilter] = useState<{
