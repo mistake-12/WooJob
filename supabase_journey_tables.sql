@@ -8,9 +8,13 @@ create table if not exists ai_journeys (
   title text not null default '求职陪跑',
   current_stage text not null default 'onboarding',
   stages jsonb not null default '[]'::jsonb,
+  completed_stages jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- 如果表已存在但没有 completed_stages 列，运行以下迁移：
+-- alter table ai_journeys add column if not exists completed_stages jsonb not null default '[]'::jsonb;
 
 create index if not exists idx_ai_journeys_user_id on ai_journeys(user_id);
 

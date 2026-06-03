@@ -75,6 +75,86 @@ function mapDbJourneyMessage(row: Record<string, unknown>): JourneyMessage {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Hub 阶段卡片状态查询
+ * 返回各阶段是否已完成的布尔标记，供 JourneyHub 动态展示卡片状态
+ */
+export interface JourneyHubStatus {
+  journeyExists: boolean;
+  diagnosisCompleted: boolean;
+  gapFillingCompleted: boolean;
+  currentStage: string;
+  completedStages: string[];
+}
+
+export async function getJourneyHubStatus(): Promise<JourneyHubStatus> {
+  const empty: JourneyHubStatus = {
+    journeyExists: false,
+    diagnosisCompleted: false,
+    gapFillingCompleted: false,
+    currentStage: 'hub',
+    completedStages: [],
+  };
+
+  try {
+    const supabase = await createServerSupabaseClient();
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return empty;
+
+    // 查询 journey
+    const { data: journey } = await supabase
+      .from('ai_journeys')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (!journey) return empty;
+
+    const journeyId = journey.id as string;
+
+    // 并行查询两个阶段的 artifact
+    const [diagResult, planResult] = await Promise.all([
+      supabase
+        .from('ai_journey_artifacts')
+        .select('id')
+        .eq('journey_id', journeyId)
+        .eq('stage', 'diagnosis')
+        .eq('artifact_type', 'diagnosis_report')
+        .limit(1)
+        .single(),
+      supabase
+        .from('ai_journey_artifacts')
+        .select('id')
+        .eq('journey_id', journeyId)
+        .eq('stage', 'gap_filling')
+        .eq('artifact_type', 'gap_filling_plan')
+        .limit(1)
+        .single(),
+    ]);
+
+    const completedStages: string[] = [];
+    if (journey.completed_stages) {
+      if (Array.isArray(journey.completed_stages)) {
+        completedStages.push(...(journey.completed_stages as string[]));
+      }
+    }
+
+    return {
+      journeyExists: true,
+      diagnosisCompleted: !diagResult.error && !!diagResult.data,
+      gapFillingCompleted: !planResult.error && !!planResult.data,
+      currentStage: (journey.current_stage as string) ?? 'hub',
+      completedStages,
+    };
+  } catch (err) {
+    console.error('[getJourneyHubStatus] Unexpected error:', err);
+    return empty;
+  }
+}
+
+/**
  * 获取或创建当前用户的单一长期 Journey
  * MVP：每个用户只有一条 journey
  */
@@ -106,6 +186,7 @@ export async function getOrCreateJourney(): Promise<{ journey?: Record<string, u
         title: '求职陪跑',
         current_stage: 'hub',
         stages: [],
+        completed_stages: [],
       })
       .select('*')
       .single();
@@ -118,6 +199,62 @@ export async function getOrCreateJourney(): Promise<{ journey?: Record<string, u
   } catch (err) {
     console.error('[getOrCreateJourney] Unexpected error:', err);
     return { error: '获取或创建旅程失败' };
+  }
+}
+
+/**
+ * 更新 journey 的当前阶段和已完成阶段列表
+ * 当用户在某个阶段完成核心操作（诊断报告生成、行动计划生成）时调用
+ */
+export async function updateJourneyStage(
+  journeyId: string,
+  stage: string
+): Promise<{ error?: string }> {
+  try {
+    const supabase = await createServerSupabaseClient();
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: '未登录或会话已过期' };
+
+    // 验证 journey 归属
+    const { data: journey, error: journeyError } = await supabase
+      .from('ai_journeys')
+      .select('id, current_stage, completed_stages')
+      .eq('id', journeyId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (journeyError || !journey) {
+      return { error: '旅程不存在或无权访问' };
+    }
+
+    const currentStage = journey.current_stage as string;
+    const currentCompleted: string[] = Array.isArray(journey.completed_stages)
+      ? (journey.completed_stages as string[])
+      : [];
+
+    // 如果已在列表中，不重复添加
+    if (!currentCompleted.includes(stage)) {
+      currentCompleted.push(stage);
+    }
+
+    const { error: updateError } = await supabase
+      .from('ai_journeys')
+      .update({
+        current_stage: stage,
+        completed_stages: currentCompleted as unknown as Record<string, unknown>,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', journeyId);
+
+    if (updateError) {
+      return { error: updateError.message };
+    }
+
+    return {};
+  } catch (err) {
+    console.error('[updateJourneyStage] Unexpected error:', err);
+    return { error: '更新旅程状态失败' };
   }
 }
 

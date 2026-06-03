@@ -13,7 +13,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase-server';
 import type { DiagnosisReport } from '@/types/diagnosis';
 import type { GapFillingPlan, GapFillingPhase, PlanItem } from '@/types/gap-filling';
-import { getOrCreateJourney } from './journey-ai';
+import { getOrCreateJourney, updateJourneyStage } from './journey-ai';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // LLM 客户端
@@ -419,6 +419,11 @@ export async function savePlan(
         return { error: updateError.message };
       }
 
+      // 标记差距填补阶段完成
+      updateJourneyStage(journeyId, 'gap_filling').catch((err) => {
+        console.warn('[savePlan] Failed to update journey stage:', err);
+      });
+
       return { artifactId: existing.id as string };
     }
 
@@ -437,6 +442,11 @@ export async function savePlan(
     if (insertError) {
       return { error: insertError.message };
     }
+
+    // 标记差距填补阶段完成
+    updateJourneyStage(journeyId, 'gap_filling').catch((err) => {
+      console.warn('[savePlan] Failed to update journey stage:', err);
+    });
 
     return { artifactId: created.id as string };
   } catch (err) {

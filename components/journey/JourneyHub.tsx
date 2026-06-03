@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { BarChart3, BookOpen, FileText, MessageSquare, Send, TrendingUp, ArrowLeft } from 'lucide-react';
-import JourneyStageCard, { JourneyStageCardProps } from './JourneyStageCard';
+import JourneyStageCard, { type JourneyStageCardProps, type JourneyStageStatus } from './JourneyStageCard';
 import DiagnosisForm from './diagnosis/DiagnosisForm';
 import JobPreviewCard from './diagnosis/JobPreviewCard';
 import DiagnosisReportView from './diagnosis/DiagnosisReportView';
@@ -10,51 +10,65 @@ import GapFillingView from './gap/GapFillingView';
 import type { JobSnapshot, DiagnosisReport } from '@/types/diagnosis';
 import type { DiagnosisFlowStage } from '@/types/diagnosis';
 import { generateDiagnosisReport, saveArtifact } from '@/app/actions/diagnosis';
+import { getJourneyHubStatus, updateJourneyStage, getOrCreateJourney } from '@/app/actions/journey-ai';
 
-const stages: Omit<JourneyStageCardProps, 'onSelect'>[] = [
+/** 阶段静态配置（不含动态 status，运行时注入） */
+type StageConfig = Omit<JourneyStageCardProps, 'status' | 'onSelect'>;
+
+const stageConfigs: StageConfig[] = [
   {
     id: 'diagnosis',
     title: '能力诊断',
     description: '基于目标岗位和简历，生成能力匹配度报告和差距清单',
     icon: BarChart3,
-    status: 'available',
   },
   {
     id: 'gap-filling',
     title: '差距填补',
     description: '将诊断差距拆解为学习、练习、项目产出等行动计划',
     icon: BookOpen,
-    status: 'available',
   },
   {
     id: 'resume',
     title: '简历优化',
     description: '根据岗位要求优化简历内容和结构，提升匹配度',
     icon: FileText,
-    status: 'coming_soon',
   },
   {
     id: 'interview',
     title: '面试模拟',
     description: '模拟真实面试场景，提供针对性反馈和改进建议',
     icon: MessageSquare,
-    status: 'coming_soon',
   },
   {
     id: 'delivery',
     title: '投递策略',
     description: '分析投递时机和渠道，制定个性化投递计划',
     icon: Send,
-    status: 'coming_soon',
   },
   {
     id: 'offer',
     title: 'Offer 谈判',
     description: '提供薪资谈判技巧和策略建议，争取最优条件',
     icon: TrendingUp,
-    status: 'coming_soon',
   },
 ];
+
+function resolveStageStatus(
+  stageId: string,
+  hubStatus: { diagnosisCompleted: boolean; gapFillingCompleted: boolean } | null
+): JourneyStageStatus {
+  if (stageId === 'diagnosis') {
+    if (hubStatus?.diagnosisCompleted) return 'completed';
+    return 'available';
+  }
+  if (stageId === 'gap-filling') {
+    if (hubStatus?.gapFillingCompleted) return 'completed';
+    return 'available';
+  }
+  // 其他阶段一律 coming_soon（P1/P2）
+  return 'coming_soon';
+}
 
 interface JourneyHubProps {
   currentStage: string | null;
@@ -63,6 +77,40 @@ interface JourneyHubProps {
 }
 
 export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }: JourneyHubProps) {
+  // ── Hub 状态（卡片 status）────────────────────────────────────────────
+  const [hubStatus, setHubStatus] = useState<{
+    diagnosisCompleted: boolean;
+    gapFillingCompleted: boolean;
+  } | null>(null);
+  const [journeyId, setJourneyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function initHub() {
+      // 获取 journey（可能创建）
+      const jResult = await getOrCreateJourney();
+      if (cancelled) return;
+      if (jResult.journey) {
+        setJourneyId(jResult.journey.id as string);
+      }
+      // 获取阶段状态
+      const status = await getJourneyHubStatus();
+      if (cancelled) return;
+      setHubStatus({
+        diagnosisCompleted: status.diagnosisCompleted,
+        gapFillingCompleted: status.gapFillingCompleted,
+      });
+    }
+    initHub();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 构建动态卡片状态
+  const stages: (Omit<JourneyStageCardProps, 'onSelect'>)[] = stageConfigs.map((cfg) => ({
+    ...cfg,
+    status: resolveStageStatus(cfg.id, hubStatus),
+  }));
+
   // ── 诊断流程状态 ───────────────────────────────────────────────────────
   const [diagnosisFlow, setDiagnosisFlow] = useState<DiagnosisFlowStage>('form');
   const [jobSnapshot, setJobSnapshot] = useState<JobSnapshot | null>(null);
@@ -83,6 +131,13 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
   const handleBackToHub = useCallback(() => {
     resetDiagnosis();
     onBackToHub();
+    // 返回 Hub 时刷新卡片状态
+    getJourneyHubStatus().then((status) => {
+      setHubStatus({
+        diagnosisCompleted: status.diagnosisCompleted,
+        gapFillingCompleted: status.gapFillingCompleted,
+      });
+    });
   }, [onBackToHub, resetDiagnosis]);
 
   // ── 诊断流程回调 ───────────────────────────────────────────────────────
@@ -108,13 +163,12 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
 
     if (saveResult.error) {
       console.warn('[JourneyHub] Failed to save job_snapshot:', saveResult.error);
-      // 不阻塞流程，继续生成报告
     }
 
     // 生成诊断报告
     const result = await generateDiagnosisReport({
       jobSnapshot: editedSnapshot,
-      selfDescription: undefined, // MVP: 暂不读取简历正文，仅依赖快照
+      selfDescription: undefined,
     });
 
     setIsProcessing(false);
@@ -125,7 +179,7 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
       setDiagnosisReport(result.report);
       setDiagnosisFlow('report');
 
-      // 保存 diagnosis_report artifact（后台，不阻塞）
+      // 保存 diagnosis_report artifact
       saveArtifact({
         stage: 'diagnosis',
         artifactType: 'diagnosis_report',
@@ -133,10 +187,19 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
       }).catch((err) => {
         console.warn('[JourneyHub] Failed to save diagnosis_report:', err);
       });
+
+      // 标记诊断阶段已完成
+      if (journeyId) {
+        updateJourneyStage(journeyId, 'diagnosis').catch((err) => {
+          console.warn('[JourneyHub] Failed to update journey stage:', err);
+        });
+        // 乐观更新本地状态
+        setHubStatus((prev) => prev ? { ...prev, diagnosisCompleted: true } : prev);
+      }
     } else {
       setError('AI 未返回诊断报告，请重试');
     }
-  }, []);
+  }, [journeyId]);
 
   // 3. 预览返回修改
   const handleBackToForm = useCallback(() => {
@@ -162,12 +225,30 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
     onStageSelect('gap-filling');
   }, [onStageSelect, resetDiagnosis]);
 
+  // 差距填补完成后刷新状态
+  const handleGapFillingBack = useCallback(() => {
+    // 刷新 Hub 卡片状态
+    getJourneyHubStatus().then((status) => {
+      setHubStatus({
+        diagnosisCompleted: status.diagnosisCompleted,
+        gapFillingCompleted: status.gapFillingCompleted,
+      });
+      // 如果计划已保存，标记 gap_filling 完成
+      if (status.gapFillingCompleted && journeyId) {
+        updateJourneyStage(journeyId, 'gap_filling').catch((err) => {
+          console.warn('[JourneyHub] Failed to update journey stage:', err);
+        });
+        setHubStatus((prev) => prev ? { ...prev, gapFillingCompleted: true } : prev);
+      }
+    });
+    onBackToHub();
+  }, [onBackToHub, journeyId]);
+
   // ── 渲染诊断阶段内容 ──────────────────────────────────────────────────
   function renderDiagnosisContent() {
     if (error) {
       return (
         <div className="h-full min-h-0 flex flex-col">
-          {/* Stage Header */}
           <div className="px-8 pt-7 pb-5 border-b border-[#CFCCC8] flex-shrink-0">
             <div className="flex items-center gap-4">
               <button
@@ -218,11 +299,9 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
       );
     }
 
-    // 根据诊断流程阶段渲染不同内容
     if (diagnosisFlow === 'report' && diagnosisReport) {
       return (
         <div className="h-full min-h-0 flex flex-col">
-          {/* Stage Header */}
           <div className="px-8 pt-7 pb-5 border-b border-[#CFCCC8] flex-shrink-0">
             <div className="flex items-center gap-4">
               <button
@@ -254,7 +333,6 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
     if (diagnosisFlow === 'preview' && jobSnapshot) {
       return (
         <div className="h-full min-h-0 flex flex-col">
-          {/* Stage Header */}
           <div className="px-8 pt-7 pb-5 border-b border-[#CFCCC8] flex-shrink-0">
             <div className="flex items-center gap-4">
               <button
@@ -287,7 +365,6 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
     // 默认：表单
     return (
       <div className="h-full min-h-0 flex flex-col">
-        {/* Stage Header */}
         <div className="px-8 pt-7 pb-5 border-b border-[#CFCCC8] flex-shrink-0">
           <div className="flex items-center gap-4">
             <button
@@ -329,7 +406,7 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
     if (currentStage === 'gap-filling') {
       return (
         <GapFillingView
-          onBack={handleBackToHub}
+          onBack={handleGapFillingBack}
           onGoToDiagnosis={() => {
             resetDiagnosis();
             onStageSelect('diagnosis');
@@ -338,12 +415,11 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
       );
     }
 
-    // 其他阶段的占位内容
+    // 其他阶段的占位内容（coming_soon）
     const StageIcon = stage.icon;
 
     return (
       <div className="h-full min-h-0 flex flex-col">
-        {/* Stage Header */}
         <div className="px-8 pt-7 pb-5 border-b border-[#CFCCC8] flex-shrink-0">
           <div className="flex items-center gap-4">
             <button
@@ -363,7 +439,6 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
           </div>
         </div>
 
-        {/* Stage Content */}
         <div className="flex-1 min-h-0 px-8 py-8 overflow-y-auto">
           <div className="h-full flex items-center justify-center">
             <div className="max-w-[560px] text-center">
@@ -371,10 +446,10 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
                 <StageIcon className="w-8 h-8 text-[#8B735B]" />
               </div>
               <h2 className="mt-6 text-2xl font-bold text-[#111111]">
-                {stage.title}功能开发中
+                {stage.title} 即将上线
               </h2>
               <p className="mt-4 text-sm text-[#666666] leading-relaxed">
-                {stage.description}
+                该功能正在开发中，将在后续版本中开放。先完成能力诊断和差距填补，为后续阶段做好准备。
               </p>
               <button
                 onClick={handleBackToHub}
@@ -417,7 +492,6 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
               key={stage.id}
               {...stage}
               onSelect={(id) => {
-                // 点击新阶段时重置诊断状态
                 if (id === 'diagnosis') {
                   setDiagnosisFlow('form');
                   setJobSnapshot(null);
