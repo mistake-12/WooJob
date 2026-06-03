@@ -6,6 +6,7 @@ import JourneyStageCard, { JourneyStageCardProps } from './JourneyStageCard';
 import DiagnosisForm from './diagnosis/DiagnosisForm';
 import JobPreviewCard from './diagnosis/JobPreviewCard';
 import DiagnosisReportView from './diagnosis/DiagnosisReportView';
+import GapFillingView from './gap/GapFillingView';
 import type { JobSnapshot, DiagnosisReport } from '@/types/diagnosis';
 import type { DiagnosisFlowStage } from '@/types/diagnosis';
 import { generateDiagnosisReport, saveArtifact } from '@/app/actions/diagnosis';
@@ -322,6 +323,19 @@ export default function JourneyHub({ currentStage, onStageSelect, onBackToHub }:
     // 能力诊断有专属流程
     if (currentStage === 'diagnosis') {
       return renderDiagnosisContent();
+    }
+
+    // 差距填补有专属流程
+    if (currentStage === 'gap-filling') {
+      return (
+        <GapFillingView
+          onBack={handleBackToHub}
+          onGoToDiagnosis={() => {
+            resetDiagnosis();
+            onStageSelect('diagnosis');
+          }}
+        />
+      );
     }
 
     // 其他阶段的占位内容
