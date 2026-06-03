@@ -153,6 +153,25 @@ export default function Home() {
     if (!destination) return;
     if (source.droppableId === destination.droppableId && source.index === destination.index) return;
 
+    // 模板卡片拖拽：从模板数据创建真实 job，而不是 reorder 不存在的 store 条目
+    if (draggableId.startsWith('template-')) {
+      const template = TEMPLATE_JOBS.find((t) => t.id === draggableId);
+      if (!template) return;
+      if (destination.droppableId === 'Offer' && source.droppableId !== 'Offer') {
+        setIsShaking(true); setShowCelebration(true);
+        setTimeout(() => { setIsShaking(false); setShowCelebration(false); }, 1800);
+        confetti({ particleCount: 225, spread: 150, origin: { y: 0.6 }, colors: ['#8E7E6E', '#C5A059', '#EBE8E1', '#FFFFFF'] });
+      }
+      createJob({
+        company: template.company,
+        title: template.title,
+        stage: destination.droppableId as JobStage,
+        deadline: template.deadline || undefined,
+        tags: template.tags as any,
+      });
+      return;
+    }
+
     if (destination.droppableId === 'Offer' && source.droppableId !== 'Offer') {
       setIsShaking(true);
       setShowCelebration(true);
